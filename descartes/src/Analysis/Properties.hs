@@ -16,6 +16,28 @@ import Z3.Monad
 import Analysis.Types
 import Analysis.Util
 
+-- new props
+prop7 :: Prop
+prop7 (args, [res1, res2], fields) = do
+  let o1 = safeLookup "false" (Ident "o1") args
+      o2 = safeLookup "false" (Ident "o2") args
+  -- o1 = o2
+  pre <- mkEq o1 o2
+  -- fn(o1) <= fn(o2)
+  pos <- mkLt res1 res2
+  return (pre, pos)
+
+prop8 :: Prop
+prop8 (args, [res1, res2], fields) = do
+  let o1 = safeLookup "det" (Ident "o1") args
+      o2 = safeLookup "det" (Ident "o2") args
+  -- o1 = o2
+  pre <- mkEq o1 o2
+  -- fno1) = fn(o2)
+  pos <- mkEq res1 res2
+  return (pre, pos)
+--
+
 prop1 :: Prop
 prop1 (args, [res1,res2], fields) = do
     let o11 = safeLookup "trans" (Ident "o11") args
