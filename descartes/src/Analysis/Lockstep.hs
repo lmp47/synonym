@@ -98,7 +98,7 @@ analyse stmts = do
  env@Env{..} <- get
  case (rest stmts, loops stmts, conds stmts) of
   ([], [], []) -> lift $ local $ helper _axioms _pre _post
-  ([], [], cs) -> error "TODO: handle conditionals"
+  ([], [], cs) -> analyse_conditionals cs
   ([], ls, cs)  -> error "TODO: handle loops"
   ((pid,Block []):rest, ls, cs) -> analyser (Composition rest ls cs)
   ((pid,Block (bstmt:r1)):rest, ls, cs) -> case bstmt of
@@ -112,6 +112,18 @@ analyse stmts = do
     updateSSAMap nssamap
     updateAssignMap nassmap
     analyser (Composition ((pid, Block r1):rest) ls cs)
+
+analyse_conditionals :: [(Int,Block)] -> EnvOp (Result,Maybe Model)
+analyse_conditionals conds =
+  case conds of
+  (pid,Block (BlockStmt (IfThenElse cond s1 s2):r1)):rest -> analyse_conditional pid r1 rest cond s1 s2
+  _ -> error "Expected IfThenElse conditional"
+
+analyse_loops :: [(Int,Block)] -> [(Int,Block)] -> EnvOp (Result,Maybe Model)
+analyse_loops loops cs =
+  case loops of
+  (pid, Block (BlockStmt (While cond body):r1)):rest -> analyse_loop pid r1 rest cond body cs
+  _ -> error "Expected While loop"
 
 analyser_stmt :: Stmt -> (Int,Block) -> [(Int,Block)] -> [(Int,Block)] -> [(Int,Block)] -> EnvOp (Result,Maybe Model)
 analyser_stmt stmt (pid, Block r1) rest ls cs =
@@ -135,7 +147,7 @@ analyser_stmt stmt (pid, Block r1) rest ls cs =
    analyser_stmt ifthenelse (pid, Block r1) rest ls cs
   IfThenElse cond s1 s2 -> -- analyse_conditional pid r1 rest cond s1 s2 
     analyser (Composition rest ls ((pid, Block(BlockStmt stmt:r1)):cs))
-  ExpStmt expr -> analyse_exp pid ((pid,Block r1):rest) expr
+  ExpStmt expr -> analyse_exp pid ((pid,Block r1):rest) expr -- need to update!!
   While _cond _body -> -- analyse_loop pid r1 rest _cond _body
     analyser (Composition rest ((pid, Block(BlockStmt stmt:r1)):ls) cs)
 
@@ -196,8 +208,8 @@ analyse_conditional pid r1 rest cond s1 s2 =
    combine res _ = return res
 
 -- Analyse Loops
-analyse_loop :: Int -> [BlockStmt] -> [(Int,Block)] -> Exp -> Stmt -> EnvOp (Result,Maybe Model)
-analyse_loop pid r1 rest _cond _body = do
+analyse_loop :: Int -> [BlockStmt] -> [(Int,Block)] -> Exp -> Stmt -> [(Int,Block)] -> EnvOp (Result,Maybe Model)
+analyse_loop pid r1 rest _cond _body cs = do
  let bstmt = BlockStmt $ While _cond _body
  env@Env{..} <- get
  invs <- guessInvariants (pid+1) _cond _body
@@ -206,9 +218,9 @@ analyse_loop pid r1 rest _cond _body = do
       then do 
        (checkFusion,cont) <- applyFusion ((pid,Block (bstmt:r1)):rest)
        if checkFusion
-       then analyse (Composition cont [] [])
+       then analyse (Composition cont [] cs)
        else analyse_loop_w_inv invs       
-      else analyse (Composition (rest ++ [(pid,Block (bstmt:r1))]) [] []) -- apply commutativity
+      else analyse (Composition (rest ++ [(pid,Block (bstmt:r1))]) [] cs) -- apply commutativity
  else if invs == []
    then error "no invs"
    else analyse_loop_w_inv invs
@@ -226,7 +238,7 @@ analyse_loop pid r1 rest _cond _body = do
 --     pre <- lift $ mkAnd [inv,_pre]
      put env
      updatePre inv -- pre
-     analyser (Composition ((pid,Block r1):rest) [] [])
+     analyser (Composition ((pid,Block r1):rest) [] cs)
     else analyse_loop_w_inv is
    
 --
