@@ -38,7 +38,10 @@ helper axioms pre post = do
   formula <- mkImplies pre post >>= \phi -> mkNot phi -- >>= \psi -> mkAnd [axioms, psi]
   assert formula
   (r, m) <- getModel
-  trace ("helper: " ++ show r) $ return (r,m)
+  -- added the formString stuff
+  formString <- astToString formula
+  -- added T.
+  T.trace ("helper: " ++ formString ++ ", " ++ show r) $ return (r,m)
 
 getInitialSSAMap :: Z3 SSAMap
 getInitialSSAMap = do
@@ -223,9 +226,10 @@ processBinOp op lhs rhs = do
     COr -> mkOr [lhs, rhs]
     CAnd -> mkAnd [lhs, rhs]
     _ -> error $ "processBinOp: not supported " ++ show op
-    
-replaceVariable :: String -> FuncDecl -> AST -> Z3 AST
-replaceVariable a fnB ast = do
+
+-- version that replaces unbound variables inside quantifiers also
+replaceVariable' :: String -> [String] -> FuncDecl -> AST -> Z3 AST
+replaceVariable' a except fnB ast = do
   kind <- getAstKind ast
   case kind of
     Z3_NUMERAL_AST    -> return ast
@@ -237,16 +241,31 @@ replaceVariable a fnB ast = do
       then do
         nParams <- getAppNumArgs app
         args <- mapM (\i -> getAppArg app i) [0..(nParams-1)]
-        args' <- mapM (replaceVariable a fnB) args
+        args' <- mapM (replaceVariable' a except fnB) args
         mkApp fnB args' --T.trace ("FN " ++ symName) $ mkApp fn args'
       else do 
         nParams <- getAppNumArgs app
         args <- mapM (\i -> getAppArg app i) [0..(nParams-1)]
-        args' <- mapM (replaceVariable a fnB) args
+        args' <- mapM (replaceVariable' a except fnB) args
         mkApp fn args' --T.trace ("FN " ++ symName) $ mkApp fn args'
     Z3_VAR_AST        -> return ast
-    Z3_QUANTIFIER_AST -> return ast --error "traverse"
+    Z3_QUANTIFIER_AST -> do
+      -- get variables that are bound as Strings
+      nBoundVars <- getQuantifierNumBound ast
+      boundVars <- mapM (\i -> getQuantifierBoundName ast i) [0..(nBoundVars - 1)]
+      boundVarsStrings <- mapM (\i -> getSymbolString i) boundVars
+      -- get variables that are bound as Apps
+      boundVars' <- getQuantifierBoundVars ast
+      apps <- mapM (\i -> toApp i) boundVars'
+      -- get body of quantifier
+      body <- getQuantifierBody ast
+      body' <- replaceVariable' a (except ++ boundVarsStrings) fnB body
+      isExists <- isQuantifierExists ast
+      if (isExists)
+      then mkExistsConst [] apps body'
+      else mkForallConst [] apps body'
     Z3_SORT_AST       -> return ast
     Z3_FUNC_DECL_AST  -> return ast
     Z3_UNKNOWN_AST    -> return ast
 
+replaceVariable a fnB ast = replaceVariable' a [] fnB ast
