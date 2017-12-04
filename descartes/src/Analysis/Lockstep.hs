@@ -96,11 +96,13 @@ analyser_debug stmts = do
 analyse :: Composition -> EnvOp (Result,Maybe Model)   
 analyse stmts = do
  env@Env{..} <- get
- case rest stmts of
-  [] -> lift $ local $ helper _axioms _pre _post
-  ((pid,Block []):rest) -> analyser (Composition rest (loops stmts) (conds stmts))
-  ((pid,Block (bstmt:r1)):rest) -> case bstmt of
-   BlockStmt stmt -> analyser_stmt stmt (pid, Block r1) rest 
+ case (rest stmts, loops stmts, conds stmts) of
+  ([], [], []) -> lift $ local $ helper _axioms _pre _post
+  ([], [], cs) -> error "TODO: handle conditionals"
+  ([], ls, cs)  -> error "TODO: handle loops"
+  ((pid,Block []):rest, ls, cs) -> analyser (Composition rest ls cs)
+  ((pid,Block (bstmt:r1)):rest, ls, cs) -> case bstmt of
+   BlockStmt stmt -> analyser_stmt stmt (pid, Block r1) rest ls cs
    LocalVars mods ty vars -> do
     sort <- lift $ processType ty    
     (nssamap,nassmap,npre) <- 
@@ -109,10 +111,10 @@ analyse stmts = do
     updatePre npre
     updateSSAMap nssamap
     updateAssignMap nassmap
-    analyser (Composition ((pid, Block r1):rest) (loops stmts) (conds stmts))
+    analyser (Composition ((pid, Block r1):rest) ls cs)
 
-analyser_stmt :: Stmt -> (Int,Block) -> [(Int,Block)] -> EnvOp (Result,Maybe Model)
-analyser_stmt stmt (pid, Block r1) rest =
+analyser_stmt :: Stmt -> (Int,Block) -> [(Int,Block)] -> [(Int,Block)] -> [(Int,Block)] -> EnvOp (Result,Maybe Model)
+analyser_stmt stmt (pid, Block r1) rest ls cs =
  case stmt of
   StmtBlock (Block block) -> analyser (Composition ((pid, Block (block ++ r1)):rest) [] [])
   Assume expr -> do
@@ -130,10 +132,12 @@ analyser_stmt stmt (pid, Block r1) rest =
    else analyser (Composition rest [] [])
   IfThen cond s1 -> do
    let ifthenelse = IfThenElse cond s1 (StmtBlock (Block []))
-   analyser_stmt ifthenelse (pid, Block r1) rest
-  IfThenElse cond s1 s2 -> analyse_conditional pid r1 rest cond s1 s2 
+   analyser_stmt ifthenelse (pid, Block r1) rest ls cs
+  IfThenElse cond s1 s2 -> -- analyse_conditional pid r1 rest cond s1 s2 
+    analyser (Composition rest ls ((pid, Block(BlockStmt stmt:r1)):cs))
   ExpStmt expr -> analyse_exp pid ((pid,Block r1):rest) expr
-  While _cond _body -> analyse_loop pid r1 rest _cond _body
+  While _cond _body -> -- analyse_loop pid r1 rest _cond _body
+    analyser (Composition rest ((pid, Block(BlockStmt stmt:r1)):ls) cs)
 
 -- Analyse Expressions
 analyse_exp :: Int -> [(Int, Block)] -> Exp -> EnvOp (Result, Maybe Model)
