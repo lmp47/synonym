@@ -11,6 +11,8 @@ import Data.Map (Map)
 import Language.Java.Syntax
 import Z3.Monad hiding (Params)
 
+import System.IO.Unsafe
+
 import qualified Data.Map as M
 import qualified Debug.Trace as T
 
@@ -27,6 +29,9 @@ type SSAMap = Map Ident (AST, Sort, Int)
 -- We need the assign map to understand the value of the loop counter
 type AssignMap = Map Ident Exp
 
+-- Map from var AST to the pid with which it is associated
+type PidMap = Map AST Int
+
 data Env = Env
   { _objSort :: Sort
   , _params  :: Params
@@ -42,6 +47,7 @@ data Env = Env
   , _debug   :: Bool
   , _fuse    :: Bool
   , _numret  :: Int
+  , _pidmap  :: PidMap
   }
 
 type EnvOp a = StateT Env Z3 a
@@ -70,6 +76,11 @@ updateNumRet = do
   s@Env{..} <- get
   let numret = _numret + 1
   put s{ _numret = numret}
+
+setNumRet :: Int -> EnvOp ()
+setNumRet n = do
+  s@Env{..} <- get
+  T.trace ("setting... " ++ (show n)) $ put s{ _numret = n}
   
 -- @ update the ssa map
 updateSSAMap :: SSAMap -> EnvOp ()
@@ -87,6 +98,14 @@ incrementAssignMap i e = do
   s@Env{..} <- get
   let assignMap = M.insert i e _assmap
   put s{ _assmap = assignMap}
+
+-- @ update the pid map
+addToPidMap :: AST -> Int -> EnvOp ()
+addToPidMap ast pid = do
+  s@Env{..} <- get
+  let pidmap = M.insert ast pid _pidmap
+  astStr <- lift $ astToString ast
+  T.trace ("put " ++ astStr ++ " -> " ++ (show pid)) $ put s {_pidmap = pidmap}
   
 -- | ClassMap: Map Identifier ClassDeclaration
 type ClassMap = Map String ClassInfo

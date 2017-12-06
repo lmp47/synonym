@@ -48,9 +48,11 @@ verifyLs opt classMap _comps prop = do
  (fields', axioms) <- addAxioms objSort fields
  let blocks = zip [0..] $ getBlocks comps
  iSSAMap <- getInitialSSAMap
+ -- get initial pid map - TODO: get inputs (maybe should generate in prop?)
+ let iPidMap = foldl  (\m (i,r) -> M.insert r i m) M.empty (zip [0..] res)
 -- let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post opt False False 0
  -- set debug and fuse
- let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post opt True False 0
+ let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post opt True False 0 iPidMap
  ((res, mmodel),_) <- runStateT (analyser (Composition blocks [] [])) iEnv
  case res of 
   Unsat -> return (Unsat, Nothing)
@@ -110,6 +112,13 @@ analyse stmts = do
     updatePre npre
     updateSSAMap nssamap
     updateAssignMap nassmap
+    mapM (\v ->
+      case v of
+        VarDecl varid _ ->
+          case varid of
+            VarId ident@(Ident str) ->
+              case safeLookup "new vars" ident nssamap of
+                (ast, _, _) -> addToPidMap ast pid) vars
     T.trace "second" $ analyser (Composition ((pid, Block r1):rest) ls cs)
 
 analyse_conditionals :: [(Int,Block)] -> [(Int,Block)] -> EnvOp (Result,Maybe Model)

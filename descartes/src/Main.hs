@@ -125,6 +125,7 @@ descartes mode classMap comparator prop propName = do
     2 -> evalZ3 $ verifyWithSelf classMap comparator prop
     3 -> evalZ3 $ verifyWithProduct classMap comparator prop
     4 -> evalZ3 $ verifyLs True classMap comparator prop
+    5 -> evalZ3 $ verifyLs False classMap comparator prop
   case vals of
     Unsat -> putStrLn $ "Unsat: OBEYS " ++ propName
     Sat -> do

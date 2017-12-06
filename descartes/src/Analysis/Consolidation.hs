@@ -37,7 +37,7 @@ verify opt classMap _comps prop = do
  (fields', axioms) <- addAxioms objSort fields
  let blocks = zip [0..] $ getBlocks comps
  iSSAMap <- getInitialSSAMap
- let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post opt False False 0
+ let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post opt True False 0 M.empty
  ((res, mmodel),_) <- runStateT (analyser blocks) iEnv
  case res of 
   Unsat -> return (Unsat, Nothing)
