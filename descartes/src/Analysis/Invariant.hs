@@ -16,6 +16,75 @@ import Z3.Monad hiding (Params)
 
 import qualified Debug.Trace as T
 
+-- check if AST contains instance of a pid
+containsPid :: Int -> [String] -> AST -> EnvOp Bool
+containsPid pid except ast = do
+  env@Env{..} <- get
+  kind <- lift $ getAstKind ast
+  case T.trace ("pid: " ++ (show pid)) kind of
+    Z3_NUMERAL_AST    -> return False
+    Z3_APP_AST        -> do
+      app <- lift $ toApp ast
+      fn <- lift $ getAppDecl app
+      sym <- lift $ getDeclName fn >>= getSymbolString
+      nParams <- lift $ getAppNumArgs app
+      args <- mapM (\i -> lift $ getAppArg app i) [0..(nParams-1)]
+      args' <- mapM (containsPid pid except) args
+      if sym `elem` except
+      then do
+        str <- lift $ astToString ast
+        T.trace (str ++ ": " ++ (show $ or args')) $ return (or args')
+      else do
+        (case M.lookup ast _pidmap of
+          Nothing -> do
+            str <- lift $ astToString ast
+            T.trace (str ++ ": " ++ (show $ or args')) $ return (or args')
+          Just pid' -> do
+            str <- lift $ astToString ast
+            T.trace (str ++ ": " ++ (show $ (pid == pid') || (or args'))) $ return (pid == pid' || (or args')))
+    Z3_VAR_AST        -> return False
+    Z3_QUANTIFIER_AST -> do
+      -- get variables that are bound as Strings
+      nBoundVars <- lift $ getQuantifierNumBound ast
+      boundVars <- mapM (\i -> lift $ getQuantifierBoundName ast i) [0..(nBoundVars - 1)]
+      boundVarsStrings <- mapM (\i -> lift $ getSymbolString i) boundVars
+      -- get body of quantifier
+      body <- lift $ getQuantifierBody ast
+      res <- containsPid pid (except ++ boundVarsStrings) body
+      return res
+    Z3_SORT_AST       -> return True
+    Z3_FUNC_DECL_AST  -> return True
+    Z3_UNKNOWN_AST    -> return True
+
+-- given a pid, partition conjuncts into (A, B),
+-- where A conjuncts have no instances of the pid in them
+-- B conjuncts have some instances of the pid in them
+partitionAst :: Int -> AST -> EnvOp ([AST], [AST])
+partitionAst pid ast = do
+  env@Env{..} <- get
+  kind <- lift $ getAstKind ast
+  case T.trace ("pid: " ++ (show pid)) kind of
+    Z3_APP_AST        -> do
+      app <- lift $ toApp ast
+      fn <- lift $ getAppDecl app
+      sym <- lift $ getDeclName fn >>= getSymbolString
+      nParams <- lift $ getAppNumArgs app
+      args <- mapM (\i -> lift $ getAppArg app i) [0..(nParams-1)]
+      if (sym == "and")
+      then do
+        resBool <- mapM (containsPid pid []) args
+        let res = zip resBool args
+        return (foldl (\(ind, dep) (haspid, arg) ->
+                       if haspid then (ind, arg:dep) else (arg:ind, dep))
+                      ([],[]) res)
+      else do
+        haspid <- containsPid pid [] ast
+        if haspid
+        then return ([], [ast])
+        else return ([ast], [])
+    _                 -> return ([], [])
+  
+
 guessInvariants :: Int -> Exp -> Stmt -> EnvOp [AST]
 guessInvariants pid cond body = do
   env@Env{..} <- get
@@ -24,7 +93,12 @@ guessInvariants pid cond body = do
   let fnNames = nub fnNames'
   increasing <- guessInvariant fnNames mkGe mkLe mkLt pid cond
   decreasing <- guessInvariant fnNames mkLe mkGe mkGt pid cond
-  return $ increasing ++ decreasing
+  (a,b) <- (lift $ simplify _pre) >>= partitionAst (pid - 1)
+  case a of
+    [] -> return $ increasing ++ decreasing
+    _ -> do
+           frame <- lift $ mapM (\x -> mkAnd (x:a)) (increasing ++ decreasing)
+           return $ frame ++ increasing ++ decreasing
 
 search fields list (Name n) =
   case n of 
@@ -65,7 +139,7 @@ guessInvariant fnNames op op' op'' pid cond = do
  case getCondCounter cond of 
   Nothing -> do 
     t <- lift $ mkTrue
-    return [t]
+    T.trace "guessing True inv" $ return [t]
   Just i -> do
    let (iAST,_,_)  = safeLookup "guessInvariant: i" i _ssamap
        e = safeLookup ("getting last condition assignment" ++ show i) i _assmap
@@ -77,7 +151,8 @@ guessInvariant fnNames op op' op'' pid cond = do
    ex1 <- lift $ mkExistsConst [] [iApp] _pre
    -- forall j. i_0 <= j < i => cond
    gen <- lift $ generalizeCond fnNames op' op'' (_objSort,_params,_res,_fields,_ssamap) i0 i iAST cond pid
-   lift $ mapM (\genInv -> mkAnd [ex1, genInv, c1]) gen
+   -- T.trace ("gen size: " ++ (show (length gen))) $ lift $ mapM (\genInv -> mkAnd [ex1, genInv, c1]) gen
+   T.trace ("gen size: " ++ (show (length gen))) $ lift $ mapM (\genInv -> mkAnd [genInv, c1]) gen
     
 getCondCounter :: Exp -> Maybe Ident
 getCondCounter expr = 
@@ -93,7 +168,7 @@ generalizeCond fnNames op op' env@(objSort, pars, res, fields, ssamap) i0 i iAST
     BinOp _ And cond -> do
       let jIdent = Ident $ "j" ++ show pid
           cond' = replaceExp i jIdent cond
-      sort <- mkIntSort
+      sort <- T.trace ("generalizeCond Binop, fnames length: " ++ (show (length fnNames))) $ mkIntSort
       jSym <- mkStringSymbol $ "j" ++ show pid
       j <- mkConst jSym sort
       jApp <- toApp j
@@ -108,7 +183,7 @@ generalizeCond fnNames op op' env@(objSort, pars, res, fields, ssamap) i0 i iAST
       mkImplies c1 c2 >>= \body -> mkForallConst [] [jApp] body >>= \inv -> return [inv]
     _ -> do
       let jIdent = Ident $ "j" ++ show pid
-      sort <- mkIntSort
+      sort <- T.trace ("generalizeCond _ , fnNames length: " ++ (show (length fnNames))) mkIntSort
       jSym <- mkStringSymbol $ "j" ++ show pid
       j <- mkConst jSym sort
       jApp <- toApp j

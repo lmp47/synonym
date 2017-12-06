@@ -25,6 +25,7 @@ import Language.Java.Syntax
 import System.IO.Unsafe
 import Z3.Monad
 
+import qualified Data.Char as C
 import qualified Data.Map as M
 import qualified Debug.Trace as T
 
@@ -35,6 +36,16 @@ data Composition = Composition { rest  :: [(Int, Block)]
                                , conds :: [(Int, Block)] }
 
 --
+
+
+getArgsPidMap :: Analysis.Types.Params -> PidMap
+getArgsPidMap pars = M.fromList $ map extract (M.toList pars)
+ where
+  extract :: (Ident, AST) -> (AST, Int)
+  extract (Ident id, ast) =
+  -- hacky input approach -- find pid based on last digit in name (hopefully k < 10)
+    (ast, C.digitToInt (last id) - 1)
+    
 
 verifyLs :: Bool -> ClassMap -> [Comparator] -> Prop -> Z3 (Result,Maybe String)
 verifyLs opt classMap _comps prop = do
@@ -48,8 +59,8 @@ verifyLs opt classMap _comps prop = do
  (fields', axioms) <- addAxioms objSort fields
  let blocks = zip [0..] $ getBlocks comps
  iSSAMap <- getInitialSSAMap
- -- get initial pid map - TODO: get inputs (maybe should generate in prop?)
- let iPidMap = foldl  (\m (i,r) -> M.insert r i m) M.empty (zip [0..] res)
+ -- get initial pid map
+ let iPidMap = foldl  (\m (i,r) -> M.insert r i m) (getArgsPidMap pars) (zip [0..] res)
 -- let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post opt False False 0
  -- set debug and fuse
  let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post opt True False 0 iPidMap
