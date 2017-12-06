@@ -50,7 +50,7 @@ verifyLs opt classMap _comps prop = do
  iSSAMap <- getInitialSSAMap
 -- let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post opt False False 0
  -- set debug and fuse
- let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post opt False False 0
+ let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post opt True False 0
  ((res, mmodel),_) <- runStateT (analyser (Composition blocks [] [])) iEnv
  case res of 
   Unsat -> return (Unsat, Nothing)
@@ -97,9 +97,9 @@ analyse stmts = do
  env@Env{..} <- get
  case (rest stmts, loops stmts, conds stmts) of
   ([], [], []) -> lift $ local $ helper _axioms _pre _post
-  ([], [], cs) -> analyse_conditionals cs []
-  ([], ls, cs)  -> analyse_loops ls cs
-  ((pid,Block []):rest, ls, cs) -> analyser (Composition rest ls cs)
+  ([], [], cs) -> T.trace "cond" $ analyse_conditionals cs []
+  ([], ls, cs)  -> T.trace "loop" $ analyse_loops ls cs []
+  ((pid,Block []):rest, ls, cs) -> T.trace "first" $ analyser (Composition rest ls cs)
   ((pid,Block (bstmt:r1)):rest, ls, cs) -> case bstmt of
    BlockStmt stmt -> analyser_stmt stmt (pid, Block r1) rest ls cs
    LocalVars mods ty vars -> do
@@ -110,7 +110,7 @@ analyse stmts = do
     updatePre npre
     updateSSAMap nssamap
     updateAssignMap nassmap
-    analyser (Composition ((pid, Block r1):rest) ls cs)
+    T.trace "second" $ analyser (Composition ((pid, Block r1):rest) ls cs)
 
 analyse_conditionals :: [(Int,Block)] -> [(Int,Block)] -> EnvOp (Result,Maybe Model)
 analyse_conditionals conds rest =
@@ -118,10 +118,10 @@ analyse_conditionals conds rest =
   (pid,Block (BlockStmt (IfThenElse cond s1 s2):r1)):cs -> analyse_conditional pid r1 cs cond s1 s2 rest
   _ -> error "Expected IfThenElse conditional"
 
-analyse_loops :: [(Int,Block)] -> [(Int,Block)] -> EnvOp (Result,Maybe Model)
-analyse_loops loops cs =
+analyse_loops :: [(Int,Block)] -> [(Int,Block)] -> [(Int,Block)] -> EnvOp (Result,Maybe Model)
+analyse_loops loops cs rest =
   case loops of
-  (pid, Block (BlockStmt (While cond body):r1)):rest -> analyse_loop pid r1 rest cond body cs
+  (pid, Block (BlockStmt (While cond body):r1)):ls -> analyse_loop pid r1 ls cond body cs rest
   _ -> error "Expected While loop"
 
 analyser_stmt :: Stmt -> (Int,Block) -> [(Int,Block)] -> [(Int,Block)] -> [(Int,Block)] -> EnvOp (Result,Maybe Model)
@@ -170,7 +170,7 @@ analyse_exp pid rest _exp ls cs =
 -- Analyse If Then Else
 analyse_conditional :: Int -> [BlockStmt] -> [(Int,Block)] -> Exp -> Stmt -> Stmt -> [(Int,Block)] -> EnvOp (Result,Maybe Model)
 analyse_conditional pid r1 cs cond s1 s2 rest =
- if cond == Nondet
+ if T.trace "cond" $ cond == Nondet
  then do
   env@Env{..} <- get
   resThen <- analyser (Composition ((pid, Block (BlockStmt s1:r1)):rest) [] cs)
@@ -192,7 +192,7 @@ analyse_conditional pid r1 cs cond s1 s2 rest =
  where
    next_cond r =
      case cs of
-        [] -> analyser (Composition (r:rest) [] [])
+        [] -> T.trace "no more conds" $ analyser (Composition (r:rest) [] [])
         cs -> analyse_conditionals cs (r:rest)
    analyse_branch phi branch = do
     env@Env{..} <- get
@@ -211,15 +211,15 @@ analyse_conditional pid r1 cs cond s1 s2 rest =
    combine res _ = return res
 
 -- Analyse Loops
-analyse_loop :: Int -> [BlockStmt] -> [(Int,Block)] -> Exp -> Stmt -> [(Int,Block)] -> EnvOp (Result,Maybe Model)
-analyse_loop pid r1 rest _cond _body cs = do
+analyse_loop :: Int -> [BlockStmt] -> [(Int,Block)] -> Exp -> Stmt -> [(Int,Block)] -> [(Int,Block)] -> EnvOp (Result,Maybe Model)
+analyse_loop pid r1 ls _cond _body cs rest = do
  let bstmt = BlockStmt $ While _cond _body
  env@Env{..} <- get
  invs <- guessInvariants (pid+1) _cond _body
  if _fuse
  --then if all isLoop rest - always the case
  then do 
-   (checkFusion,cont) <- applyFusion ((pid,Block (bstmt:r1)):rest)
+   (checkFusion,cont) <- applyFusion ((pid,Block (bstmt:r1)):ls)
    if checkFusion
    then analyse (Composition cont [] cs)
    else analyse_loop_w_inv invs       
@@ -229,44 +229,46 @@ analyse_loop pid r1 rest _cond _body cs = do
    else analyse_loop_w_inv invs
  where
    isLoop :: (Int, Block) -> Bool
-   isLoop (_, Block ((BlockStmt (While _ _)):rest)) = True
+   isLoop (_, Block ((BlockStmt (While _ _)):ls)) = True
    isLoop _ = False
    analyse_loop_w_inv [] = error "none of the invariants was able to prove the property."
    analyse_loop_w_inv (inv:is) = do
-    let k = T.trace "trying an inv" $ unsafePerformIO $ getChar
     env@Env{..} <- get
-    it_res <- _analyse_loop rest pid _cond _body inv
-    if k `seq` it_res
+    it_res <- _analyse_loop pid _cond _body inv
+    if it_res
     then do
 --     pre <- lift $ mkAnd [inv,_pre]
      put env
      updatePre inv -- pre
-     analyser (Composition [(pid,Block r1)] rest cs)
+     case ls of
+       [] -> analyser (Composition [(pid,Block r1)] ls cs)
+       ls -> analyse_loops ls cs ((pid,Block r1):rest)
+     T.trace "it_res" $ analyser (Composition [(pid,Block r1)] ls cs)
     else analyse_loop_w_inv is
    
 --
-_analyse_loop :: [(Int,Block)] -> Int -> Exp -> Stmt -> AST -> EnvOp Bool
-_analyse_loop rest pid _cond _body inv = do
+_analyse_loop :: Int -> Exp -> Stmt -> AST -> EnvOp Bool
+_analyse_loop pid _cond _body inv = do
  invStr  <- lift $ astToString inv
  env@Env{..} <- get
  (checkPre,_) <- lift $ local $ helper _axioms _pre inv
- case checkPre of
+ case T.trace "checkPre" checkPre of
   Unsat -> do
    condAst <- lift $ processExp (_objSort,_params,_res,_fields,_ssamap) _cond
    ncondAst <- lift $ mkNot condAst
    (checkInv,_) <- lift $ mkAnd [inv,ncondAst] >>= \npre -> local $ helper _axioms npre inv
-   case checkInv of
+   case T.trace "checkInv" checkInv of
     Unsat -> do
      pre <- lift $ mkAnd [inv,condAst]
      let s = [(pid, Block [BlockStmt _body])]
      updatePre pre
      updatePost inv
      (bodyCheck,m) <- analyser (Composition s [] [])
-     case bodyCheck of
-      Unsat -> return True
+     case T.trace "bodyCheck" bodyCheck of
+      Unsat -> T.trace "body succeeded" $ return True
       Sat -> do
        put env
-       return  False -- {inv && cond} body {inv} failed
+       T.trace "failed body " $ return  False -- {inv && cond} body {inv} failed
     Sat -> return False -- inv && not_cond =/=> inv
   Sat -> return False -- pre =/=> inv
 
