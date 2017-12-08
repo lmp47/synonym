@@ -32,17 +32,43 @@ checkSAT phi = do
   res <- check
   pop 1
   return res
-  
+
+-- Gets all satisfying assignments for
+-- conds
+allSAT :: AST -> [AST] -> [AST] -> Int -> Z3 [AST]
+allSAT phi conds acc num = do
+  push
+  --debug stuff
+  phiStr <- astToString phi
+  --
+  T.trace ("allSAT: " ++ phiStr) $ assert phi
+  (_, m) <- getModel
+  case m of
+    Nothing -> do
+      -- done with allSAT
+      pop num
+      return acc
+    Just model -> do
+      -- get assignments to conds
+      assigns <- mapEval evalBool model conds
+      case assigns of
+        Nothing -> error "allSAT: model"
+        Just bools -> do
+          assign_forms <- mapM (\(c,b) -> if b then return c else mkNot c) (zip conds bools)
+          assign <- mkAnd assign_forms >>= simplify
+          negassign <- mkNot assign
+          allSAT negassign conds (assign:acc) (num + 1)
+
 helper axioms pre post = do
   assert axioms    
   formula <- mkImplies pre post >>= \phi -> mkNot phi -- >>= \psi -> mkAnd [axioms, psi]
   assert formula
   (r, m) <- getModel
   -- added the formString stuff
-  formString <- astToString formula
+  --formString <- astToString formula
   -- added T.
-  T.trace ("helper: " ++ formString ++ ", " ++ show r) $ return (r,m)
-  --return (r,m)
+  --T.trace ("helper: " ++ formString ++ ", " ++ show r) $ return (r,m)
+  return (r,m)
 
 getInitialSSAMap :: Z3 SSAMap
 getInitialSSAMap = do
