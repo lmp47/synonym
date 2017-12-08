@@ -53,9 +53,6 @@ verifyLs opt classMap _comps prop = do
      -- a = unsafePerformIO $ mapM_ (\(Comp _ f) -> putStrLn $ prettyPrint f) comps
  (objSort, pars, res, fields) <- prelude classMap comps
  (pre, post) <- trace ("after prelude:" ++ show (objSort, pars, res, fields)) $ prop (pars, res, fields)
- -- debug
- preStr  <- astToString pre
- --
  (fields', axioms) <- addAxioms objSort fields
  let blocks = zip [0..] $ getBlocks comps
  iSSAMap <- getInitialSSAMap
@@ -110,9 +107,9 @@ analyse stmts = do
  env@Env{..} <- get
  case (rest stmts, loops stmts, conds stmts) of
   ([], [], []) -> lift $ local $ helper _axioms _pre _post
-  ([], [], cs) -> T.trace "cond" $ analyse_conditionals cs []
-  ([], ls, cs)  -> T.trace "loop" $ analyse_loops ls cs []
-  ((pid,Block []):rest, ls, cs) -> T.trace "first" $ analyser (Composition rest ls cs)
+  ([], [], cs) -> analyse_conditionals cs []
+  ([], ls, cs)  -> analyse_loops ls cs []
+  ((pid,Block []):rest, ls, cs) -> analyser (Composition rest ls cs)
   ((pid,Block (bstmt:r1)):rest, ls, cs) -> case bstmt of
    BlockStmt stmt -> analyser_stmt stmt (pid, Block r1) rest ls cs
    LocalVars mods ty vars -> do
@@ -130,7 +127,7 @@ analyse stmts = do
             VarId ident@(Ident str) ->
               case safeLookup "new vars" ident nssamap of
                 (ast, _, _) -> addToPidMap ast pid) vars
-    T.trace "second" $ analyser (Composition ((pid, Block r1):rest) ls cs)
+    analyser (Composition ((pid, Block r1):rest) ls cs)
 
 analyse_conditionals :: [(Int,Block)] -> [(Int,Block)] -> EnvOp (Result,Maybe Model)
 analyse_conditionals conds rest =
@@ -155,11 +152,11 @@ analyser_stmt stmt (pid, Block r1) rest ls cs =
    ret pid mexpr
    env@Env{..} <- get
    if _opt
-   then do
+   then {- do
     (check,_) <- lift $ local $ helper _axioms _pre _post
     if check == Unsat
     then return _default
-    else analyser (Composition rest ls cs)
+    else -} analyser (Composition rest ls cs)
    else analyser (Composition rest ls cs)
   IfThen cond s1 -> do
    let ifthenelse = IfThenElse cond s1 (StmtBlock (Block []))
@@ -190,7 +187,7 @@ analyse_exp pid rest _exp ls cs =
 -- Analyse If Then Else
 analyse_conditional :: Int -> [BlockStmt] -> [(Int,Block)] -> Exp -> Stmt -> Stmt -> [(Int,Block)] -> EnvOp (Result,Maybe Model)
 analyse_conditional pid r1 cs cond s1 s2 rest =
- if T.trace "cond" $ cond == Nondet
+ if cond == Nondet
  then do
   env@Env{..} <- get
   resThen <- analyser (Composition ((pid, Block (BlockStmt s1:r1)):rest) [] cs)
@@ -212,7 +209,7 @@ analyse_conditional pid r1 cs cond s1 s2 rest =
  where
    next_cond r =
      case cs of
-        [] -> T.trace "no more conds" $ analyser (Composition (r:rest) [] [])
+        [] -> analyser (Composition (r:rest) [] [])
         cs -> analyse_conditionals cs (r:rest)
    analyse_branch phi branch = do
     env@Env{..} <- get
@@ -263,7 +260,6 @@ analyse_loop pid r1 ls _cond _body cs rest = do
      case ls of
        [] -> analyser (Composition [(pid,Block r1)] ls cs)
        ls -> analyse_loops ls cs ((pid,Block r1):rest)
-     T.trace "it_res" $ analyser (Composition [(pid,Block r1)] ls cs)
     else analyse_loop_w_inv is
    
 --

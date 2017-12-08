@@ -35,8 +35,11 @@ checkSAT phi = do
 
 -- Gets all satisfying assignments for
 -- conds
-allSAT :: AST -> [AST] -> [AST] -> Int -> Z3 [AST]
-allSAT phi conds acc num = do
+allSAT :: AST -> [AST] -> Z3 [(AST, [Bool])]
+allSAT phi conds = allSAT' phi conds [] 1
+
+allSAT' :: AST -> [AST] -> [(AST, [Bool])] -> Int -> Z3 [(AST, [Bool])]
+allSAT' phi conds acc num = do
   push
   --debug stuff
   phiStr <- astToString phi
@@ -57,7 +60,7 @@ allSAT phi conds acc num = do
           assign_forms <- mapM (\(c,b) -> if b then return c else mkNot c) (zip conds bools)
           assign <- mkAnd assign_forms >>= simplify
           negassign <- mkNot assign
-          allSAT negassign conds (assign:acc) (num + 1)
+          allSAT' negassign conds ((assign, bools):acc) (num + 1)
 
 helper axioms pre post = do
   assert axioms    
