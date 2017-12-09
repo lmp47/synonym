@@ -12,6 +12,7 @@ import Analysis.SelfComposition
 import Analysis.Types
 import Analysis.Util
 import Analysis.Lockstep
+import Analysis.LockstepAS
 import Data.Maybe
 import Language.Java.Parser hiding (opt)
 import Language.Java.Pretty hiding (opt)
@@ -126,6 +127,7 @@ descartes mode classMap comparator prop propName = do
     3 -> evalZ3 $ verifyWithProduct classMap comparator prop
     4 -> evalZ3 $ verifyLs True classMap comparator prop
     5 -> evalZ3 $ verifyLs False classMap comparator prop
+    6 -> evalZ3 $ verifyLsAs True classMap comparator prop
   case vals of
     Unsat -> putStrLn $ "Unsat: OBEYS " ++ propName
     Sat -> do

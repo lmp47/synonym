@@ -60,7 +60,8 @@ allSAT' phi conds acc num = do
           assign_forms <- mapM (\(c,b) -> if b then return c else mkNot c) (zip conds bools)
           assign <- mkAnd assign_forms >>= simplify
           negassign <- mkNot assign
-          allSAT' negassign conds ((assign, bools):acc) (num + 1)
+          aStr <- astToString assign
+          T.trace ("found: " ++ aStr) $ allSAT' negassign conds ((assign, bools):acc) (num + 1)
 
 helper axioms pre post = do
   assert axioms    
@@ -68,9 +69,9 @@ helper axioms pre post = do
   assert formula
   (r, m) <- getModel
   -- added the formString stuff
-  --formString <- astToString formula
-  -- added T.
-  --T.trace ("helper: " ++ formString ++ ", " ++ show r) $ return (r,m)
+  formString <- astToString formula
+  --added T.
+  T.trace ("helper: " ++ formString ++ ", " ++ show r) $ return (r,m)
   return (r,m)
 
 getInitialSSAMap :: Z3 SSAMap

@@ -25,6 +25,7 @@ import Language.Java.Syntax
 import System.IO.Unsafe
 import Z3.Monad
 
+import qualified Data.Char as C
 import qualified Data.Map as M
 import qualified Debug.Trace as T
 
@@ -37,9 +38,8 @@ verify opt classMap _comps prop = do
  (fields', axioms) <- addAxioms objSort fields
  let blocks = zip [0..] $ getBlocks comps
  iSSAMap <- getInitialSSAMap
- -- get initial pid map - TODO: get inputs (maybe should generate in prop?)
  let iPidMap = foldl  (\m (i,r) -> M.insert r i m) M.empty (zip [0..] res)
- let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post opt True False 0 iPidMap
+ let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post opt False False 0 iPidMap
  ((res, mmodel),_) <- runStateT (analyser blocks) iEnv
  case res of 
   Unsat -> return (Unsat, Nothing)
