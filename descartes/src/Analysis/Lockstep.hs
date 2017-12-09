@@ -248,7 +248,7 @@ analyse_loop pid r1 ls _cond _body cs rest = do
      put env
      updatePre inv -- pre
      case ls of
-       [] -> analyser (Composition [(pid,Block r1)] ls cs)
+       [] -> analyser (Composition ((pid,Block r1):rest) ls cs)
        ls -> analyse_loops ls cs ((pid,Block r1):rest)
     else analyse_loop_w_inv is
    

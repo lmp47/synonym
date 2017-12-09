@@ -17,6 +17,6 @@ Executable descartes
                     , language-java
                     , z3
     Hs-Source-Dirs:   src/
-    ghc-options:      -O3 -rtsopts
+    ghc-options:      -O3 -rtsopts -prof -fprof-auto
     Extensions:       DoAndIfThenElse
 
