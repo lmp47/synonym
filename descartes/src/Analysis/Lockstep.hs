@@ -200,18 +200,19 @@ analyse_conditional pid r1 cs bs cond s1 s2 rest =
    next_cond b r =
      case cs of
         [] -> do
+              env@Env{..} <- get
               res <- analyser (Composition (b:bs) [] [])
               if _opt
               then do
                 case res of
                   (Unsat, _) -> return _default
-                  _ -> analyser (Composition (r1:rest) [] [])
-              else analyser (Composition (r1:rest) [] [])
-        cs -> analyse_conditionals cs (b:bs) (r1:rest)
+                  _ -> analyser (Composition (r:rest) [] [])
+              else analyser (Composition (r:rest) [] [])
+        cs -> analyse_conditionals cs (b:bs) (r:rest)
    analyse_branch phi branch = do
     env@Env{..} <- get
     updatePre phi
-    let b = (pid, Block (BlockStmt [branch]))
+    let b = (pid, Block [BlockStmt branch])
     let r = (pid, Block r1)
     if _opt
     then do
