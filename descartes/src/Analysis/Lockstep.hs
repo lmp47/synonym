@@ -97,7 +97,7 @@ analyse stmts = do
  env@Env{..} <- get
  case (rest stmts, loops stmts, conds stmts) of
   ([], [], []) -> lift $ local $ helper _axioms _pre _post
-  ([], [], cs) -> analyse_conditionals cs [] []
+  ([], [], cs) -> analyse_conditionals cs []
   ([], ls, cs)  -> analyse_loops ls cs []
   ((pid,Block []):rest, ls, cs) -> analyser (Composition rest ls cs)
   ((pid,Block (bstmt:r1)):rest, ls, cs) -> case bstmt of
@@ -119,10 +119,10 @@ analyse stmts = do
                 (ast, _, _) -> addToPidMap ast pid) vars
     analyser (Composition ((pid, Block r1):rest) ls cs)
 
-analyse_conditionals :: [(Int,Block)] -> [(Int,Block)] -> [(Int,Block)] -> EnvOp (Result,Maybe Model)
-analyse_conditionals conds branches rest =
+analyse_conditionals :: [(Int,Block)] -> [(Int,Block)] -> EnvOp (Result,Maybe Model)
+analyse_conditionals conds rest =
   case conds of
-  (pid,Block (BlockStmt (IfThenElse cond s1 s2):r1)):cs -> analyse_conditional pid r1 cs branches cond s1 s2 rest
+  (pid,Block (BlockStmt (IfThenElse cond s1 s2):r1)):cs -> analyse_conditional pid r1 cs cond s1 s2 rest
   _ -> error "Expected IfThenElse conditional"
 
 analyse_loops :: [(Int,Block)] -> [(Int,Block)] -> [(Int,Block)] -> EnvOp (Result,Maybe Model)
@@ -142,11 +142,11 @@ analyser_stmt stmt (pid, Block r1) rest ls cs =
    ret pid mexpr
    env@Env{..} <- get
    if _opt
-   then {- do
+   then do
     (check,_) <- lift $ local $ helper _axioms _pre _post
     if check == Unsat
     then return _default
-    else -} analyser (Composition rest ls cs)
+    else analyser (Composition rest ls cs)
    else analyser (Composition rest ls cs)
   IfThen cond s1 -> do
    let ifthenelse = IfThenElse cond s1 (StmtBlock (Block []))
@@ -175,8 +175,8 @@ analyse_exp pid rest _exp ls cs =
    analyser (Composition rest ls cs)
 
 -- Analyse If Then Else
-analyse_conditional :: Int -> [BlockStmt] -> [(Int,Block)] -> [(Int, Block)] -> Exp -> Stmt -> Stmt -> [(Int,Block)] -> EnvOp (Result,Maybe Model)
-analyse_conditional pid r1 cs bs cond s1 s2 rest =
+analyse_conditional :: Int -> [BlockStmt] -> [(Int,Block)] -> Exp -> Stmt -> Stmt -> [(Int,Block)] -> EnvOp (Result,Maybe Model)
+analyse_conditional pid r1 cs cond s1 s2 rest =
  if cond == Nondet
  then do
   env@Env{..} <- get
@@ -197,30 +197,21 @@ analyse_conditional pid r1 cs bs cond s1 s2 rest =
   resElse <- analyse_branch preElse s2
   combine resThen resElse
  where
-   next_cond b r =
+   next_cond r =
      case cs of
-        [] -> do
-              env@Env{..} <- get
-              res <- analyser (Composition (b:bs) [] [])
-              if _opt
-              then do
-                case res of
-                  (Unsat, _) -> return _default
-                  _ -> analyser (Composition (r:rest) [] [])
-              else analyser (Composition (r:rest) [] [])
-        cs -> analyse_conditionals cs (b:bs) (r:rest)
+        [] -> analyser (Composition (r:rest) [] [])
+        cs -> analyse_conditionals cs (r:rest)
    analyse_branch phi branch = do
     env@Env{..} <- get
     updatePre phi
-    let b = (pid, Block [BlockStmt branch])
-    let r = (pid, Block r1)
+    let r = (pid, Block (BlockStmt branch:r1))
     if _opt
     then do
       cPhi <- lift $ checkSAT phi
       if cPhi == Unsat
       then return _default
-      else next_cond b r
-    else next_cond b r
+      else next_cond r
+    else next_cond r
    combine :: (Result, Maybe Model) -> (Result, Maybe Model) -> EnvOp (Result, Maybe Model)
    combine (Unsat,_) (Unsat,_) = return _default
    combine (Unsat,_) res = return res

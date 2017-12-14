@@ -50,7 +50,7 @@ verifyLsAs opt classMap _comps prop = do
  let iPidMap = foldl  (\m (i,r) -> M.insert r i m) M.empty (zip [0..] res)
 -- let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post opt False False 0
  -- set debug and fuse
- let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post opt False False 0 iPidMap
+ let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post opt True False 0 iPidMap
  ((res, mmodel),_) <- runStateT (analyser (Composition blocks [] [])) iEnv
  case res of 
   Unsat -> return (Unsat, Nothing)
@@ -174,11 +174,11 @@ analyser_stmt stmt (pid, Block r1) rest ls cs =
    ret pid mexpr
    env@Env{..} <- get
    if _opt
-   then {- do
+   then do
     (check,_) <- lift $ local $ helper _axioms _pre _post
     if check == Unsat
     then return _default
-    else -} analyser (Composition rest ls cs)
+    else analyser (Composition rest ls cs)
    else analyser (Composition rest ls cs)
   IfThen cond s1 -> do
    let ifthenelse = IfThenElse cond s1 (StmtBlock (Block []))
