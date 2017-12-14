@@ -265,7 +265,7 @@ applyFusion list = do
  -- frame rule 
  (a,_) <- (lift $ simplify _pre) >>= partitionAst pids
  -- the candidate invariant
- inv <- lift $ mkAnd (eqInv:a)
+ inv <- lift $ mkAnd (inv':eqInv:a)
  (checkInv,_) <- lift $ local $ helper _axioms _pre inv
  invStr <- lift $ astToString inv
  preStr <- lift $ astToString _pre

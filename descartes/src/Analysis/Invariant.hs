@@ -152,7 +152,7 @@ guessInvariant fnNames op op' op'' pid cond = do
    -- forall j. i_0 <= j < i => cond
    gen <- lift $ generalizeCond fnNames op' op'' (_objSort,_params,_res,_fields,_ssamap) i0 i iAST cond pid
    -- T.trace ("gen size: " ++ (show (length gen))) $ lift $ mapM (\genInv -> mkAnd [ex1, genInv, c1]) gen
-   T.trace ("gen size: " ++ (show (length gen))) $ lift $ mapM (\genInv -> mkAnd [genInv, c1]) gen
+   T.trace ("gen size: " ++ (show (length gen))) $ lift $ mapM (\genInv -> mkAnd [ex1, genInv, c1]) gen
     
 removeSubscript :: Ident -> EnvOp String
 removeSubscript (Ident str) = do

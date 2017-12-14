@@ -101,4 +101,5 @@ postOp _exp lhs op str = do
    updatePre pre
    updatePost post
    updateSSAMap ssamap
+   addToPidMap astVar (safeLookup "Assign" plhsAST _pidmap)
   _ -> error $ str ++ show _exp ++ " not supported"
