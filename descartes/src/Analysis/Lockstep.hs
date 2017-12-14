@@ -50,7 +50,7 @@ verifyLs opt classMap _comps prop = do
  let iPidMap = foldl  (\m (i,r) -> M.insert r i m) M.empty (zip [0..] res)
 -- let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post opt False False 0
  -- set debug and fuse
- let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post opt False False 0 iPidMap
+ let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post opt False True 0 iPidMap
  ((res, mmodel),_) <- runStateT (analyser (Composition blocks [] [])) iEnv
  case res of 
   Unsat -> return (Unsat, Nothing)
@@ -223,17 +223,19 @@ analyse_loop pid r1 ls _cond _body cs rest = do
  let bstmt = BlockStmt $ While _cond _body
  env@Env{..} <- get
  invs <- guessInvariants (pid+1) _cond _body
- if _fuse
+ if T.trace "fuse" _fuse && length ls > 0
  --then if all isLoop rest - always the case
  then do 
    (checkFusion,cont) <- applyFusion ((pid,Block (bstmt:r1)):ls)
    if checkFusion
    then analyse (Composition cont [] cs)
-   else analyse_loop_w_inv invs       
+   else do
+        T.trace "failed" $ put env
+        analyse_loop_w_inv invs       
 --      else analyse (Composition (rest ++ [(pid,Block (bstmt:r1))]) [] cs) -- apply commutativity
  else if invs == []
-   then error "no invs"
-   else analyse_loop_w_inv invs
+      then error "no invs"
+      else analyse_loop_w_inv invs
  where
    isLoop :: (Int, Block) -> Bool
    isLoop (_, Block ((BlockStmt (While _ _)):ls)) = True
@@ -284,17 +286,22 @@ applyFusion list = do
  let (loops,rest) = unzip $ map takeHead list
      (_conds,bodies) = unzip $ map splitLoop loops
      (pids,conds) = unzip _conds
- astApps <- lift $ mapM (makeApp _ssamap) pids
+ -- first, get cond counters
+ counter <- case getCondCounter (head conds) of
+              Nothing -> error "Could not find cond counter"
+              Just c -> removeSubscript c
+ -- use the found cond counter in astApps
+ astApps <- lift $ mapM (makeApp _ssamap counter) pids
  let (asts,apps) = unzip astApps
  inv' <- lift $ mkExistsConst [] apps _pre
  -- equality constraints between the loop counter iterations: i1 = i2 and i1 = i3 ...
  eqs <- lift $ mapM (\c -> mkEq (head asts) c) (tail asts)
  eqInv <- lift $ mkAnd eqs
+ -- frame rule 
+ (a,_) <- (lift $ simplify _pre) >>= partitionAst pids
  -- the candidate invariant
- inv <- lift $ mkAnd [inv',eqInv]
- --let inv = eqInv
+ inv <- lift $ mkAnd (inv':eqInv:a)
  (checkInv,_) <- lift $ local $ helper _axioms _pre inv
- -- uncomment printing
  invStr <- lift $ astToString inv
  preStr <- lift $ astToString _pre
  let k = T.trace ("\nPrecondition:\n"++ preStr ++ "\nInvariant:\n" ++ invStr) $ unsafePerformIO $ getChar
@@ -327,14 +334,14 @@ applyFusion list = do
    takeHead (pid, Block []) = error "takeHead"
    takeHead (pid, Block ((BlockStmt b):rest)) = ((pid,b), (pid, Block rest))
    splitLoop :: (Int, Stmt) -> ((Int, Exp), (Int, Block))
-   splitLoop (pid, While cond body) = 
+   splitLoop (pid, While cond body) =
     case body of
      StmtBlock block -> ((pid, cond), (pid,block))
      _ -> error "splitLoop constructing block out of loop body"
    splitLoop _ = error "splitLoop"
-   makeApp :: SSAMap -> Int -> Z3 (AST,App)
-   makeApp ssamap pid = do
-    let i = Ident $ "i" ++ show (pid+1)
+   makeApp :: SSAMap -> String -> Int -> Z3 (AST,App)
+   makeApp ssamap str pid = do
+    let i = Ident $ str ++ show (pid+1)
         (iAST,_,_)  = safeLookup "guessInvariant: i" i ssamap
     iApp <- toApp iAST
     return (iAST,iApp)

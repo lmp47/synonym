@@ -21,7 +21,7 @@ containsPids :: [Int] -> [String] -> AST -> EnvOp Bool
 containsPids pids except ast = do
   env@Env{..} <- get
   kind <- lift $ getAstKind ast
-  case T.trace ("pids: " ++ (show pids)) kind of
+  case kind of
     Z3_NUMERAL_AST    -> return False
     Z3_APP_AST        -> do
       app <- lift $ toApp ast

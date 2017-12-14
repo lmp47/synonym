@@ -41,10 +41,7 @@ allSAT phi conds = allSAT' phi conds [] 1
 allSAT' :: AST -> [AST] -> [(AST, [Bool])] -> Int -> Z3 [(AST, [Bool])]
 allSAT' phi conds acc num = do
   push
-  --debug stuff
-  phiStr <- astToString phi
-  --
-  T.trace ("allSAT: " ++ phiStr) $ assert phi
+  assert phi
   (_, m) <- getModel
   case m of
     Nothing -> do
@@ -61,7 +58,7 @@ allSAT' phi conds acc num = do
           assign <- mkAnd assign_forms >>= simplify
           negassign <- mkNot assign
           aStr <- astToString assign
-          T.trace ("found: " ++ aStr) $ allSAT' negassign conds ((assign, bools):acc) (num + 1)
+          allSAT' negassign conds ((assign, bools):acc) (num + 1)
 
 helper axioms pre post = do
   assert axioms    
@@ -72,7 +69,7 @@ helper axioms pre post = do
   formString <- astToString formula
   --added T.
   T.trace ("helper: " ++ formString ++ ", " ++ show r) $ return (r,m)
-  return (r,m)
+  --return (r,m)
 
 getInitialSSAMap :: Z3 SSAMap
 getInitialSSAMap = do
@@ -278,7 +275,7 @@ replaceVariable a fnB ast = do
         nParams <- getAppNumArgs app
         args <- mapM (\i -> getAppArg app i) [0..(nParams-1)]
         args' <- mapM (replaceVariable a fnB) args
-        mkApp fn args' --T.trace ("FN " ++ symName) $ mkApp fn args'
+        mkApp fn args'
     Z3_VAR_AST        -> return ast
     Z3_QUANTIFIER_AST -> do
       -- get variables that are bound as Strings
