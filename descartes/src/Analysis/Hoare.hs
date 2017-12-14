@@ -63,12 +63,12 @@ assign _exp lhs aOp rhs = do
  case lhs of
   NameLhs (Name [ident@(Ident str)]) -> do
    let (plhsAST,sort, i) = safeLookup "Assign" ident _ssamap
-       cstr = str ++ show i
        ni = i+1
        nstr = str ++ show ni
    sym <- lift $ mkStringSymbol nstr
    var <- lift $ mkFreshFuncDecl nstr [] sort
    astVar <- lift $ mkApp var []
+   cstr <- lift $ toApp plhsAST >>= getAppDecl >>= getDeclName >>= getSymbolString
    let ssamap = M.insert ident (astVar, sort, ni) _ssamap
    ass <- lift $ processAssign astVar aOp rhsAst plhsAST
    pre <- lift $ mkAnd [_pre, ass]
@@ -88,12 +88,12 @@ postOp _exp lhs op str = do
  case lhs of
   ExpName (Name [ident@(Ident str)]) -> do
    let (plhsAST,sort, i) = safeLookup "Assign" ident _ssamap
-       cstr = str ++ show i
        ni = i+1
        nstr = str ++ show ni
    sym <- lift $ mkStringSymbol nstr
    var <- lift $ mkFreshFuncDecl nstr [] sort
    astVar <- lift $ mkApp var []
+   cstr <- lift $ toApp plhsAST >>= getAppDecl >>= getDeclName >>= getSymbolString
    let ssamap = M.insert ident (astVar, sort, ni) _ssamap
    ass <- lift $ processAssign astVar EqualA rhsAst plhsAST
    pre <- lift $ mkAnd [_pre, ass]
