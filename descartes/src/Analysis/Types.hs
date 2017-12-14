@@ -105,7 +105,7 @@ addToPidMap ast pid = do
   s@Env{..} <- get
   let pidmap = M.insert ast pid _pidmap
   astStr <- lift $ astToString ast
-  T.trace ("put " ++ astStr ++ " -> " ++ (show pid)) $ put s {_pidmap = pidmap}
+  put s {_pidmap = pidmap}
   
 -- | ClassMap: Map Identifier ClassDeclaration
 type ClassMap = Map String ClassInfo

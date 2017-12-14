@@ -223,19 +223,19 @@ analyse_loop pid r1 ls _cond _body cs rest = do
  let bstmt = BlockStmt $ While _cond _body
  env@Env{..} <- get
  invs <- guessInvariants (pid+1) _cond _body
- if T.trace "fuse" _fuse && length ls > 0
+ if _fuse && length ls > 0
  --then if all isLoop rest - always the case
  then do 
    (checkFusion,cont) <- applyFusion ((pid,Block (bstmt:r1)):ls)
    if checkFusion
    then analyse (Composition cont [] cs)
    else do
-        T.trace "failed" $ put env
+        put env
         analyse_loop_w_inv invs       
 --      else analyse (Composition (rest ++ [(pid,Block (bstmt:r1))]) [] cs) -- apply commutativity
  else if invs == []
-      then error "no invs"
-      else analyse_loop_w_inv invs
+   then error "no invs"
+   else analyse_loop_w_inv invs
  where
    isLoop :: (Int, Block) -> Bool
    isLoop (_, Block ((BlockStmt (While _ _)):ls)) = True
@@ -308,7 +308,7 @@ applyFusion list = do
  case k `seq` checkInv of
   Unsat -> do
    -- the new precondition inside the loop
-   condsAsts <- lift $ mapM (processExp (_objSort,_params,_res,_fields,_ssamap)) conds 
+   condsAsts <- lift $ mapM (processExp (_objSort,_params,_res,_fields,_ssamap)) conds
    ncondsAsts <- lift $ mapM mkNot condsAsts
    bodyPre <- lift $ mkAnd $ inv:condsAsts
    updatePre bodyPre

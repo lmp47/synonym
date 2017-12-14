@@ -33,15 +33,15 @@ containsPids pids except ast = do
       if sym `elem` except
       then do
         str <- lift $ astToString ast
-        T.trace (str ++ ": " ++ (show $ or args')) $ return (or args')
+        return (or args')
       else do
         (case M.lookup ast _pidmap of
           Nothing -> do
             str <- lift $ astToString ast
-            T.trace (str ++ ": " ++ (show $ or args')) $ return (or args')
+            return (or args')
           Just pid -> do
             str <- lift $ astToString ast
-            T.trace (str ++ ": " ++ (show $ (pid `elem` pids) || (or args'))) $ return (pid `elem` pids || (or args')))
+            return (pid `elem` pids || (or args')))
     Z3_VAR_AST        -> return False
     Z3_QUANTIFIER_AST -> do
       -- get variables that are bound as Strings
@@ -63,7 +63,7 @@ partitionAst :: [Int] -> AST -> EnvOp ([AST], [AST])
 partitionAst pids ast = do
   env@Env{..} <- get
   kind <- lift $ getAstKind ast
-  case T.trace ("pids: " ++ (show pids)) kind of
+  case kind of
     Z3_APP_AST        -> do
       app <- lift $ toApp ast
       fn <- lift $ getAppDecl app
@@ -151,8 +151,8 @@ guessInvariant fnNames op op' op'' pid cond = do
    ex1 <- lift $ mkExistsConst [] [iApp] _pre
    -- forall j. i_0 <= j < i => cond
    gen <- lift $ generalizeCond fnNames op' op'' (_objSort,_params,_res,_fields,_ssamap) i0 i iAST cond pid
-   -- T.trace ("gen size: " ++ (show (length gen))) $ lift $ mapM (\genInv -> mkAnd [ex1, genInv, c1]) gen
-   T.trace ("gen size: " ++ (show (length gen))) $ lift $ mapM (\genInv -> mkAnd [ex1, genInv, c1]) gen
+   lift $ mapM (\genInv -> mkAnd [ex1, genInv, c1]) gen
+   --T.trace ("gen size: " ++ (show (length gen))) $ lift $ mapM (\genInv -> mkAnd [ex1, genInv, c1]) gen
     
 removeSubscript :: Ident -> EnvOp String
 removeSubscript (Ident str) = do
@@ -176,7 +176,8 @@ generalizeCond fnNames op op' env@(objSort, pars, res, fields, ssamap) i0 i iAST
     BinOp _ And cond -> do
       let jIdent = Ident $ "j" ++ show pid
           cond' = replaceExp i jIdent cond
-      sort <- T.trace ("generalizeCond Binop, fnames length: " ++ (show (length fnNames))) $ mkIntSort
+      --sort <- T.trace ("generalizeCond Binop, fnames length: " ++ (show (length fnNames))) $ mkIntSort
+      sort <- mkIntSort
       jSym <- mkStringSymbol $ "j" ++ show pid
       j <- mkConst jSym sort
       jApp <- toApp j

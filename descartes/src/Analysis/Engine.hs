@@ -68,8 +68,8 @@ helper axioms pre post = do
   -- added the formString stuff
   formString <- astToString formula
   --added T.
-  T.trace ("helper: " ++ formString ++ ", " ++ show r) $ return (r,m)
-  --return (r,m)
+  --T.trace ("helper: " ++ formString ++ ", " ++ show r) $ return (r,m)
+  return (r,m)
 
 getInitialSSAMap :: Z3 SSAMap
 getInitialSSAMap = do
