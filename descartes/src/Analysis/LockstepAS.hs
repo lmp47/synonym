@@ -27,6 +27,7 @@ import Z3.Monad
 
 import qualified Data.Char as C
 import qualified Data.Map as M
+import qualified Data.List as L
 import qualified Debug.Trace as T
 
 -- Move later:
@@ -50,7 +51,7 @@ verifyLsAs opt classMap _comps prop = do
  let iPidMap = foldl  (\m (i,r) -> M.insert r i m) M.empty (zip [0..] res)
 -- let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post opt False False 0
  -- set debug and fuse
- let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post opt False True 0 iPidMap
+ let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post opt True True 0 iPidMap
  ((res, mmodel),_) <- runStateT (analyser (Composition blocks [] [])) iEnv
  case res of 
   Unsat -> return (Unsat, Nothing)
@@ -97,7 +98,7 @@ analyse stmts = do
  env@Env{..} <- get
  case (rest stmts, loops stmts, conds stmts) of
   ([], [], []) -> lift $ local $ helper _axioms _pre _post
-  ([], [], cs) -> analyse_conditionals cs []
+  ([], [], cs) -> analyse_conditionals cs
   ([], ls, cs)  -> analyse_loops ls cs []
   ((pid,Block []):rest, ls, cs) -> analyser (Composition rest ls cs)
   ((pid,Block (bstmt:r1)):rest, ls, cs) -> case bstmt of
@@ -119,8 +120,8 @@ analyse stmts = do
                 (ast, _, _) -> addToPidMap ast pid) vars
     analyser (Composition ((pid, Block r1):rest) ls cs)
 
-analyse_conditionals :: [(Int,Block)] -> [(Int,Block)] -> EnvOp (Result,Maybe Model)
-analyse_conditionals conds rest = do
+analyse_conditionals :: [(Int,Block)] -> EnvOp (Result,Maybe Model)
+analyse_conditionals conds = do
   env@Env{..} <- get
   tuples <- mapM convert conds
   let choices = map (\(x, _, _) -> x) tuples
@@ -213,21 +214,22 @@ analyse_loop :: Int -> [BlockStmt] -> [(Int,Block)] -> Exp -> Stmt -> [(Int,Bloc
 analyse_loop pid r1 ls _cond _body cs rest = do
  let bstmt = BlockStmt $ While _cond _body
  env@Env{..} <- get
- invs <- guessInvariants (pid+1) _cond _body
- if _fuse && length ls > 0
+ if _fuse
  --then if all isLoop rest - always the case
  then do 
-   (checkFusion,cont) <- applyFusion ((pid,Block (bstmt:r1)):ls)
+   let (loops,rest) = unzip $ map takeHead ((pid,Block (bstmt:r1)):ls)
+   (checkFusion,cont) <- applyFusion loops rest
    if checkFusion
-   then analyse (Composition cont [] cs)
-   else do
-        put env
-        analyse_loop_w_inv invs       
+   then analyser (Composition cont [] cs)
+   else error "Fusion failed"
 --      else analyse (Composition (rest ++ [(pid,Block (bstmt:r1))]) [] cs) -- apply commutativity
- else if invs == []
-   then error "no invs"
-   else analyse_loop_w_inv invs
+ else do
+   invs <- guessInvariants (pid+1) _cond _body
+   analyse_loop_w_inv invs
  where
+   takeHead :: (Int, Block) -> ((Int, Stmt), (Int,Block))
+   takeHead (pid, Block []) = error "takeHead"
+   takeHead (pid, Block ((BlockStmt b):rest)) = ((pid,b), (pid, Block rest))
    isLoop :: (Int, Block) -> Bool
    isLoop (_, Block ((BlockStmt (While _ _)):ls)) = True
    isLoop _ = False
@@ -271,11 +273,30 @@ _analyse_loop pid _cond _body inv = do
     Sat -> return False -- inv && not_cond =/=> inv
   Sat -> return False -- pre =/=> inv
 
-applyFusion :: [(Int, Block)] -> EnvOp (Bool,[(Int,Block)])
-applyFusion list = do
+applyFusion :: [(Int, Stmt)] -> [(Int, Block)] -> EnvOp (Bool,[(Int,Block)])
+applyFusion [(pid, (While cond body))] rest = do
+  env@Env{..} <- get
+  invs <- guessInvariants (pid+1) cond body
+  res <- analyse_loop_w_inv pid cond body invs
+  return (res, rest)
+ where
+   analyse_loop_w_inv _ _ _ [] = error "none of the invariants was able to prove the property."
+   analyse_loop_w_inv pid _cond _body (inv:is) = do
+    env@Env{..} <- get
+    it_res <- _analyse_loop pid _cond _body inv
+    if it_res
+    then do
+     cond <- lift $ processExp (_objSort,_params,_res,_fields,_ssamap) _cond
+     ncond <- lift $ mkNot cond
+     pre <- lift $ mkAnd [inv,ncond]
+     put env
+     updatePre inv
+     return True
+    else analyse_loop_w_inv pid _cond _body is
+
+applyFusion loops rest = do
  env@Env{..} <- get
- let (loops,rest) = unzip $ map takeHead list
-     (_conds,bodies) = unzip $ map splitLoop loops
+ let (_conds,bodies) = unzip $ map splitLoop loops
      (pids,conds) = unzip _conds
  -- first, get cond counters
  counter <- case getCondCounter (head conds) of
@@ -310,20 +331,30 @@ applyFusion list = do
      condsNAst <- lift $ mkAnd condsAsts >>= mkNot
      nPre <- lift $ mkAnd [inv,condsNAst]
      ncondAst <- lift $ mkAnd ncondsAsts
-     (lastCheck,_) <- lift $ local $ helper _axioms nPre ncondAst
-     case lastCheck of
-      Unsat -> do
+     (lastCheck, model) <- lift $ local $ helper _axioms nPre ncondAst
+     case (lastCheck, model) of
+      (Unsat, _) -> do
        put env
        updatePre nPre
        return (True,rest)
-      Sat -> return (False,[]) -- "lastCheck failed"
+      (Sat, Just model) -> do --return (False,[]) -- "lastCheck failed"
+        bools <- lift $  getAssignsInModel condsAsts model
+        let (next', done') = L.partition (\(x,_) -> x) (zip bools loops)
+            (next, done) = (map snd next', map snd done')
+        put env
+        -- analyse the "done" loops
+        case done of
+          [] -> error "applyFusion: at least one loop must have finished"
+          ds -> do
+                 (res, _) <- applyFusion ds []
+                 if res
+                 then -- try to analyse the "next" loops
+                   applyFusion next rest >>= return
+                 else error "applyFusion: fuse"
     Sat -> return (False,[]) -- "couldnt prove the loop bodies with invariant"
   Sat -> return (False,[]) -- "precondition does not imply the invariant"
  where
    -- Begin Fusion Utility Functions
-   takeHead :: (Int, Block) -> ((Int, Stmt), (Int,Block))
-   takeHead (pid, Block []) = error "takeHead"
-   takeHead (pid, Block ((BlockStmt b):rest)) = ((pid,b), (pid, Block rest))
    splitLoop :: (Int, Stmt) -> ((Int, Exp), (Int, Block))
    splitLoop (pid, While cond body) =
     case body of
@@ -337,3 +368,16 @@ applyFusion list = do
     iApp <- toApp iAST
     return (iAST,iApp)
    -- End Fusion Utility Functions
+   analyse_loop_w_inv _ _ _ [] = error "none of the invariants was able to prove the property."
+   analyse_loop_w_inv pid _cond _body (inv:is) = do
+    env@Env{..} <- get
+    it_res <- _analyse_loop pid _cond _body inv
+    if it_res
+    then do
+     cond <- lift $ processExp (_objSort,_params,_res,_fields,_ssamap) _cond
+     ncond <- lift $ mkNot cond
+     pre <- lift $ mkAnd [inv,ncond]
+     put env
+     updatePre inv
+     return True
+    else analyse_loop_w_inv pid _cond _body is

@@ -57,7 +57,7 @@ allSAT' phi conds acc num = do
           assign_forms <- mapM (\(c,b) -> if b then return c else mkNot c) (zip conds bools)
           assign <- mkAnd assign_forms >>= simplify
           negassign <- mkNot assign
-          aStr <- astToString assign
+          --aStr <- astToString assign
           allSAT' negassign conds ((assign, bools):acc) (num + 1)
 
 helper axioms pre post = do
@@ -70,6 +70,14 @@ helper axioms pre post = do
   --added T.
   --T.trace ("helper: " ++ formString ++ ", " ++ show r) $ return (r,m)
   return (r,m)
+
+getAssignsInModel :: [AST] -> Model -> Z3 [Bool]
+getAssignsInModel asts model = do
+  assigns <- mapEval evalBool model asts
+  case assigns of
+    Nothing -> error "getAssignsInModel"
+    Just bools -> do
+      return bools
 
 getInitialSSAMap :: Z3 SSAMap
 getInitialSSAMap = do

@@ -50,7 +50,7 @@ verifyLs opt classMap _comps prop = do
  let iPidMap = foldl  (\m (i,r) -> M.insert r i m) M.empty (zip [0..] res)
 -- let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post opt False False 0
  -- set debug and fuse
- let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post opt False True 0 iPidMap
+ let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post opt True True 0 iPidMap
  ((res, mmodel),_) <- runStateT (analyser (Composition blocks [] [])) iEnv
  case res of 
   Unsat -> return (Unsat, Nothing)
@@ -228,7 +228,7 @@ analyse_loop pid r1 ls _cond _body cs rest = do
  then do 
    (checkFusion,cont) <- applyFusion ((pid,Block (bstmt:r1)):ls)
    if checkFusion
-   then analyse (Composition cont [] cs)
+   then analyser (Composition (cont++rest) [] cs)
    else do
         put env
         analyse_loop_w_inv invs       
