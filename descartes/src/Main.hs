@@ -70,6 +70,8 @@ arity 5 = 2
 arity 6 = 2
 arity 7 = 2
 arity 8 = 2
+arity 9 = 4
+arity 10 = 2
 
 toProp :: Int -> Prop
 toProp 1 = prop1
@@ -80,6 +82,8 @@ toProp 5 = prop5
 toProp 6 = prop6
 toProp 7 = prop7
 toProp 8 = prop8
+toProp 9 = prop9
+toProp 10 = prop10
 
 showProp :: Int -> String
 showProp 1 = "[Anti-symmetry] (compare): forall x and y, sgn(compare(x,y)) == −sgn(compare(y,x))"
@@ -94,6 +98,8 @@ showProp 6 = "[Consistency] (equals): for any non-null reference values x and y,
           ++ " multiple invocations of x.equals(y) consistently return true or consistently return false."
 showProp 7 = "[False] (misc): for all x and y, if x = y then f(x) < f(y)."
 showProp 8 = "[Determinism] (misc): for all x and y, if x = y then f(x) = f(y)."
+showProp 9 = "[Symmetry Test] (misc): for all w, x, y, z, if w = x and y = z then f(w) = f(x) and f(y) = f(z)."
+showProp 10 = "[Monotonicity] (misc): for all obj1 and obj2, if obj1.x = obj2.x then f(obj1) = f(obj2)."
   
 front_end :: FilePath -> IO ()
 front_end file = do

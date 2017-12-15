@@ -33,8 +33,39 @@ prop8 (args, [res1, res2], fields) = do
       o2 = safeLookup "det" (Ident "o2") args
   -- o1 = o2
   pre <- mkEq o1 o2
-  -- fno1) = fn(o2)
+  -- fn(o1) = fn(o2)
   pos <- mkEq res1 res2
+  return (pre, pos)
+
+prop9 :: Prop
+prop9 (args, [res1, res2, res3, res4], fields) = do
+  let o1 = safeLookup "symm_toy" (Ident "o1") args
+      o2 = safeLookup "symm_toy" (Ident "o2") args
+      o3 = safeLookup "symm_toy" (Ident "o3") args
+      o4 = safeLookup "symm_toy" (Ident "o4") args
+  -- o1 = o2
+  pre12 <- mkEq o1 o2
+  -- o3 = o4
+  pre34 <- mkEq o3 o4
+  -- precondition
+  pre <- mkAnd [pre12, pre34]
+  -- fn(o1) = fn(o2) and fn(o3) = fn(o4)
+  pos12 <- mkEq res1 res2 
+  pos34 <- mkEq res3 res4
+  pos <- mkAnd [pos12, pos34]
+  return (pre, pos)
+
+prop10 :: Prop
+prop10 (args, [res1, res2], fields) = do
+  let o1 = safeLookup "monotone" (Ident "o1") args
+      o2 = safeLookup "monotone" (Ident "o2") args
+      fn = safeLookup "processName: Field"  (Ident "x") fields
+  o1app <- mkApp fn [o1]
+  o2app <- mkApp fn [o2]
+  -- o1.x < o2.x
+  pre <- mkLt o1app o2app
+  -- fn(o1) < fn(o2)
+  pos <- mkLt res1 res2
   return (pre, pos)
 --
 
