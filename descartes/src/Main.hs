@@ -99,7 +99,7 @@ showProp 6 = "[Consistency] (equals): for any non-null reference values x and y,
 showProp 7 = "[False] (misc): for all x and y, if x = y then f(x) < f(y)."
 showProp 8 = "[Determinism] (misc): for all x and y, if x = y then f(x) = f(y)."
 showProp 9 = "[Symmetry Test] (misc): for all w, x, y, z, if w = x and y = z then f(w) = f(x) and f(y) = f(z)."
-showProp 10 = "[Monotonicity] (misc): for all obj1 and obj2, if obj1.x = obj2.x then f(obj1) = f(obj2)."
+showProp 10 = "[Monotonicity] (misc): for all obj1 and obj2, if obj1.x < obj2.x then f(obj1) < f(obj2)."
   
 front_end :: FilePath -> IO ()
 front_end file = do
