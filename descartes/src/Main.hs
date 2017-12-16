@@ -13,6 +13,7 @@ import Analysis.Types
 import Analysis.Util
 import Analysis.Lockstep
 import Analysis.LockstepAS
+import Analysis.Symmetry
 import Data.Maybe
 import Language.Java.Parser hiding (opt)
 import Language.Java.Pretty hiding (opt)
