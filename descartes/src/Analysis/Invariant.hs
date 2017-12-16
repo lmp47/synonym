@@ -151,8 +151,26 @@ guessInvariant fnNames op op' op'' pid cond = do
    ex1 <- lift $ mkExistsConst [] [iApp] _pre
    -- forall j. i_0 <= j < i => cond
    gen <- lift $ generalizeCond fnNames op' op'' (_objSort,_params,_res,_fields,_ssamap) i0 i iAST cond pid
-   lift $ mapM (\genInv -> mkAnd [ex1, genInv, c1]) gen
+   bound <- getBound op (_objSort,_params,_res,_fields,_ssamap) iAST cond
+   case gen of
+     [] -> do
+             and_bound <- lift $ mkAnd [ex1, c1, bound]
+             and <- lift $ mkAnd [ex1, c1]
+             return [and_bound, and]
+     _ -> lift $ mapM (\genInv -> mkAnd [ex1, genInv, c1]) gen
    --T.trace ("gen size: " ++ (show (length gen))) $ lift $ mapM (\genInv -> mkAnd [ex1, genInv, c1]) gen
+
+getBound :: Z3Op -> (Sort, Params, [AST], Fields, SSAMap) -> AST -> Exp -> EnvOp AST
+getBound op (_objSort,_params,_res,_fields,_ssamap) iAST _cond =
+  case _cond of
+    BinOp (ExpName (Name [i])) _ expr -> mkCond expr iAST
+    BinOp (BinOp (ExpName (Name [i])) _ expr) _ _ -> mkCond expr iAST
+    BinOp (BinOp (BinOp (ExpName (Name [i])) _ expr) _ _) And _ -> mkCond expr iAST
+ where
+  mkCond expr iAST = do
+    lhs <- lift $ processExp (_objSort,_params,_res,_fields,_ssamap) expr 
+    c <- lift $ op lhs iAST
+    return c
     
 removeSubscript :: Ident -> EnvOp String
 removeSubscript (Ident str) = do
