@@ -39,7 +39,7 @@ verify opt classMap _comps prop = do
  let blocks = zip [0..] $ getBlocks comps
  iSSAMap <- getInitialSSAMap
  let iPidMap = foldl  (\m (i,r) -> M.insert r i m) M.empty (zip [0..] res)
- let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post opt False True 0 iPidMap
+ let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post opt False True 0 iPidMap M.empty
  ((res, mmodel),_) <- runStateT (analyser blocks) iEnv
  case res of 
   Unsat -> return (Unsat, Nothing)

@@ -41,7 +41,7 @@ verifyWithSelf classMap comps prop = do
   (fields', axioms) <- addAxioms objSort fields
   let blocks = zip [0..] $ getBlocks comps
   iSSAMap <- getInitialSSAMap
-  let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post False False False 0 M.empty
+  let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post False False False 0 M.empty M.empty
   _pres <- mapM (\p -> evalStateT (selfcomposition p) iEnv) blocks
   let pres = snd $ unzip _pres
 --  pres <- mapM (selfcomposition (objSort, pars, res, fields', iSSAMap, axioms, pre)) blocks

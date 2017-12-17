@@ -78,6 +78,7 @@ assign _exp lhs aOp rhs = do
    updateSSAMap ssamap
    incrementAssignMap ident rhs
    addToPidMap astVar (safeLookup "Assign" plhsAST _pidmap)
+   addToIdMap astVar ident
   _ -> error $ "Assign " ++ show _exp ++ " not supported"
   
 -- Analyse Post De/Increment

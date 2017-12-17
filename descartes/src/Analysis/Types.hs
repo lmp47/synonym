@@ -32,6 +32,9 @@ type AssignMap = Map Ident Exp
 -- Map from var AST to the pid with which it is associated
 type PidMap = Map AST Int
 
+-- Map from var AST to the Ident with which it is associated
+type IdMap = Map AST Ident
+
 data Env = Env
   { _objSort :: Sort
   , _params  :: Params
@@ -48,6 +51,7 @@ data Env = Env
   , _fuse    :: Bool
   , _numret  :: Int
   , _pidmap  :: PidMap
+  , _idmap   :: IdMap
   }
 
 type EnvOp a = StateT Env Z3 a
@@ -104,8 +108,14 @@ addToPidMap :: AST -> Int -> EnvOp ()
 addToPidMap ast pid = do
   s@Env{..} <- get
   let pidmap = M.insert ast pid _pidmap
-  astStr <- lift $ astToString ast
   put s {_pidmap = pidmap}
+
+-- @ update the id map
+addToIdMap :: AST -> Ident -> EnvOp ()
+addToIdMap ast id = do
+  s@Env{..} <- get
+  let idmap = M.insert ast id _idmap
+  put s {_idmap = idmap}
   
 -- | ClassMap: Map Identifier ClassDeclaration
 type ClassMap = Map String ClassInfo
