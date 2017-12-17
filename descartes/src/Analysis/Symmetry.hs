@@ -20,30 +20,27 @@ import qualified Debug.Trace as T
 import qualified Data.Map as M
 --
 
--- A hacky way of getting pids for io;
+-- A hacky way of getting pids for inputs and nondets;
 -- relies on assuming:
 --  * there are <10 inputs
 --  * inputs are of the form "odi",
 --    where d is which argument it is
 --          i is the pid
---  * outputs are of the form "resi"
---  * all inputs and no outputs are
---    in the idmap
-ioPid :: AST -> IdMap -> Z3 (String, Int)
+--  * everything that's not in idmap is a "nondet"
+ioPid :: AST -> IdMap -> Z3 (String, Maybe Int)
 ioPid ast idmap =
   case M.lookup ast idmap of
     Just (Ident str) ->
-      return $ (\(x,y) -> (x, read y)) $ splitAt 2 str
-    Nothing -> do
-      str <- astToString ast
-      return $ (\(x,y) -> (x, read y)) $ splitAt 3 str
+      return $ (\(x,y) -> (x, Just $ read y)) $ splitAt 2 str
+    Nothing -> return ("nondet", Nothing)
 
-sepPid :: AST -> IdMap -> PidMap -> Z3 (String, Int)
+sepPid :: AST -> IdMap -> PidMap -> Z3 (String, Maybe Int)
 sepPid ast idmap pidmap =
   case M.lookup ast pidmap of
-    Just pid ->
-      let Ident str = safeLookup "sepPid" ast idmap in
-      return (take (length str - length (show pid)) str, pid)
+    Just pid -> do
+      astStr <- astToString ast
+      let Ident str = T.trace ("looking up " ++ astStr) $ safeLookup "sepPid" ast idmap
+      return (take (length str - length (show pid)) str, Just pid)
     _ -> ioPid ast idmap
     
 --
@@ -58,13 +55,11 @@ data Graph = Graph
   } deriving Show
 
 data Tag = N
-         | L
-         | R deriving (Eq, Ord)
+         | Arg Int deriving (Eq, Ord)
 
 instance Show Tag where
   show N = "N"
-  show L = "L"
-  show R = "R"
+  show (Arg i) = "Arg " ++ (show i)
 
 data Color = OrPre
            | OrPost
@@ -72,6 +67,9 @@ data Color = OrPre
            | Not
            | Eq
            | Plus
+           | Times
+           | Forall
+           | Exists
            | Id
            | Num (Tag, Int)
            | Var (Tag, String) deriving (Eq, Ord)
@@ -83,6 +81,9 @@ instance Show Color where
   show Not = "Not"
   show Eq = "Eq"
   show Plus = "Plus"
+  show Times = "Times"
+  show Forall = "Forall"
+  show Exists = "Exists"
   show Id = "Id"
   show (Num (t,i)) = show t ++ ", " ++ show i
   show (Var (t,s)) = show t ++ ", " ++ s
@@ -91,7 +92,7 @@ instance Show Color where
 type ColInt = (Int, Map Color Int, Map Int Color)
 
 defaultColInt :: ColInt
-defaultColInt = (6, M.empty, M.empty)
+defaultColInt = (9, M.empty, M.empty)
 
 colToInt :: Color -> ColInt -> (Int, ColInt)
 colToInt OrPre m = (0, m)
@@ -100,7 +101,10 @@ colToInt Lte m = (2, m)
 colToInt Not m = (3, m)
 colToInt Eq m = (4, m)
 colToInt Plus m = (5, m)
-colToInt Id m = (6, m)
+colToInt Times m = (6, m)
+colToInt Forall m = (7, m)
+colToInt Exists m = (8, m)
+colToInt Id m = (9, m)
 colToInt other (n, ci, ic) =
   case M.lookup other ci of
     Nothing -> (n + 1, (n + 1, M.insert other (n + 1) ci, M.insert (n + 1) other ic))
@@ -212,21 +216,37 @@ makeGraph pre post pids idmap pidmap = do
                     then Just Not
                   else if sym == "+"
                     then Just Plus
+                  else if sym == "*"
+                    then Just Times
                   else Nothing
         case col of
-          Nothing -> do
-            let Ident strpid = safeLookup "handle" ast idmap
-            (str, pid) <- sepPid ast idmap pidmap
-            let k = T.trace str
-            let (n, bk) = k $ colToInt (Var (tag, str)) (colorbk g)
-            let g' = g { numVerts = numVerts g + 1
-                       , outDeg = 0:outDeg g
-                       , color = updateColor n id (color g)
-                       , colorbk = bk }
-            case siblings of
-              (id',(sib, t):sibs):sibs' -> handle (id', sib, numVerts g', t) ((id' + 1, sibs):sibs') g'
-              (_,[]):(id',(sib, t):sibs):sibs' -> handle (id', sib, numVerts g', t) ((id' + 1, sibs):sibs') g'
-              _ -> return g'
+          Nothing ->
+            if nParams == 0
+            then do -- constant
+              (str, pid) <- sepPid ast idmap pidmap
+              let k = T.trace str
+              let (n, bk) = k $ colToInt (Var (tag, str)) (colorbk g)
+              let g' = g { numVerts = numVerts g + 1
+                         , outDeg = 0:outDeg g
+                         , color = updateColor n id (color g)
+                         , colorbk = bk }
+              case siblings of
+                (id',(sib, t):sibs):sibs' -> handle (id', sib, numVerts g', t) ((id' + 1, sibs):sibs') g'
+                (_,[]):(id',(sib, t):sibs):sibs' -> handle (id', sib, numVerts g', t) ((id' + 1, sibs):sibs') g'
+                _ -> return g'
+            else do -- function application
+              --let Ident str = safeLookup "handle" ast idmap
+              let k = T.trace sym
+              let (n, bk) = k $ colToInt (Var (tag, sym)) (colorbk g)
+              let endpts = map (+ ch) [0..nParams - 1]
+              let g' = g { numVerts = numVerts g + 1
+                         , numEdges = numEdges g + nParams
+                         , outDeg = nParams:outDeg g
+                         , endpt = endpts ++ endpt g
+                         , color = updateColor n id (color g)
+                         , colorbk = bk }
+              let (arg, atag):args' = zipWith (\a i -> (a, Arg i)) args [1..]
+              handle (ch, arg, numVerts g', atag) ((ch + 1, args'):siblings) g'
           Just col -> 
             case col of
               Not ->
@@ -248,49 +268,40 @@ makeGraph pre post pids idmap pidmap = do
                            , color = updateColor n id (color g)} in
                 case args of
                   [left, right] ->
-                    let (ltag, rtag) = if col == Lte then (L, R) else (N, N) in
+                    let (ltag, rtag) = if col == Lte then (Arg 1, Arg 2) else (N, N) in
                     handle (ch, left, numVerts g', ltag) ((ch + 1, [(right, rtag)]):siblings) g'
                   _ -> error "too many args"
-{-
-        if nParams == 0
-        then --constant
-          -- TODO: fix
-          let g' = g { numVerts = numVerts g + 1
-                     , outDeg = 0:outDeg g
-                     , color = updateColor (colToInt Var) id (color g)} in
-          case siblings of
-            (id',sib:sibs):sibs' -> handle (id', sib, numVerts g') ((id' + 1, sibs):sibs') g'
-            (_,[]):(id',sib:sibs):sibs' -> handle (id', sib, numVerts g') ((id' + 1, sibs):sibs') g'
-            _ -> return g'
-        else --node
-          let col = if sym == "<="
-                    then Lte
-                    else if sym == "="
-                      then Eq
-                    else if sym == "not"
-                      then Not
-                    else if sym == "+"
-                      then Plus
-                    else error ("Symbol: " ++ sym ++ ", " ++ (show nParams)) in
-          case col of
-            Not ->
-              let g' = g { numVerts = numVerts g + 1
-                         , numEdges = numEdges g + 1
-                         , startEdge = (numEdges g):(startEdge g)
-                         , outDeg = 1:outDeg g
-                         , endpt = ch : endpt g
-                         , color = updateColor (colToInt Not) id (color g)} in
-              handle (ch, head args, numVerts g') ((ch + 1, tail args):siblings) g'
-            _ ->
-              let g' = g { numVerts = numVerts g + 1
-                         , numEdges = numEdges g + 2
-                         , startEdge = (numEdges g):(startEdge g)
-                         , outDeg = 2:outDeg g
-                         , endpt = ch : endpt g
-                         , color = updateColor (colToInt col) id (color g)} in
-              handle (ch, head args, numVerts g') ((ch + 1, tail args):siblings) g'
--}
-      _                 -> error "unexpected AST"
+      Z3_QUANTIFIER_AST -> do
+        numBoundVars <- getQuantifierNumBound ast 
+        boundVars <- getQuantifierBoundVars ast 
+        body <- getQuantifierBody ast 
+        isExists <- isQuantifierExists ast 
+        let nParams = numBoundVars + 1
+        let col = if isExists then Exists else Forall
+        let (n, _) = colToInt col (colorbk g)
+        let endpts = map (+ ch) [0..nParams - 1]
+        let g' = g { numVerts = numVerts g + 1
+                   , numEdges = numEdges g + nParams
+                   , outDeg = nParams:outDeg g
+                   , endpt = endpts ++ endpt g
+                   , color = updateColor n id (color g) }
+        let args = zipWith (\a i -> (a, Arg i)) boundVars [2..]
+        bodyStr <- astToString body
+        handle (ch, body, numVerts g', Arg 1) ((ch + 1, args):siblings) g'
+      Z3_VAR_AST       -> do
+        str <- astToString ast
+        let (n, bk) = colToInt (Var (tag, str)) (colorbk g)
+        let g' = g { numVerts = numVerts g + 1
+                   , outDeg = 0:outDeg g
+                   , color = updateColor n id (color g)
+                   , colorbk = bk }
+        case siblings of
+          (id',(sib, t):sibs):sibs' -> handle (id', sib, numVerts g', t) ((id' + 1, sibs):sibs') g'
+          (_,[]):(id',(sib, t):sibs):sibs' -> handle (id', sib, numVerts g', t) ((id' + 1, sibs):sibs') g'
+          _ -> return g'
+      _                 -> do
+        astStr <- astToString ast
+        error ("unexpected AST: " ++ astStr)
 
 -- Make sparse nauty/traces-compatible graph:
 -- Need:

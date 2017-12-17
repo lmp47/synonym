@@ -46,15 +46,12 @@ verifyLsAs opt classMap _comps prop = do
      -- a = unsafePerformIO $ mapM_ (\(Comp _ f) -> putStrLn $ prettyPrint f) comps
  (objSort, pars, res, fields) <- prelude classMap comps
  (pre, post) <- trace ("after prelude:" ++ show (objSort, pars, res, fields)) $ prop (pars, res, fields)
- let iIdMap = M.fromList (map swap (M.toList pars))
- pre' <- simplify pre
- gr <- makeGraph pre' post [1] iIdMap M.empty
- let k = T.trace (show gr) $ unsafePerformIO $ getChar
- (fields', axioms) <- k `seq` addAxioms objSort fields
+ (fields', axioms) <- addAxioms objSort fields
  let blocks = zip [0..] $ getBlocks comps
  iSSAMap <- getInitialSSAMap
  -- get initial pid map
  let iPidMap = foldl  (\m (i,r) -> M.insert r i m) M.empty (zip [0..] res)
+ let iIdMap = foldl (\m r -> M.insert r (Ident "res") m) (M.fromList (map swap (M.toList pars))) res
 -- let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post opt False False 0
  -- set debug and fuse
  let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post opt False True 0 iPidMap iIdMap
@@ -123,13 +120,16 @@ analyse stmts = do
           case varid of
             VarId ident@(Ident str) ->
               case safeLookup "new vars" ident nssamap of
-                (ast, _, _) -> addToPidMap ast pid) vars
+                (ast, _, _) -> addToPidMap ast pid >> addToIdMap ast ident) vars
     analyser (Composition ((pid, Block r1):rest) ls cs)
 
 analyse_conditionals :: [(Int,Block)] -> EnvOp (Result,Maybe Model)
 analyse_conditionals conds = do
   env@Env{..} <- get
-  tuples <- mapM convert conds
+  pre' <- lift $ simplify _pre
+  gr <- lift $ makeGraph pre' _post [1] _idmap _pidmap
+  let k = T.trace (show gr) $ unsafePerformIO $ getChar
+  tuples <- k `seq` mapM convert conds
   let choices = map (\(x, _, _) -> x) tuples
   choice <- lift $ mkOr choices
   -- preChoice <- lift $ mkAnd [_pre, choice]
