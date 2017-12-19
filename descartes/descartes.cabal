@@ -16,6 +16,9 @@ Executable descartes
                     , cmdargs
                     , language-java
                     , z3
+    extra-libraries:  nauty
+    extra-lib-dirs:   ../dependencies/nauty26r10
+    C-sources:        ../dependencies/nauty26r10/NT.c
     Hs-Source-Dirs:   src/
     ghc-options:      -O3 -rtsopts -prof -fprof-auto
     Extensions:       DoAndIfThenElse
