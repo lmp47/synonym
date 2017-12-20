@@ -36,12 +36,12 @@ combinations (x:xs) =
 
 verifyWithSelf :: ClassMap -> [Comparator] -> Prop -> Z3 (Result, Maybe String)
 verifyWithSelf classMap comps prop = do
-  (objSort, pars, res, fields) <- prelude classMap comps
+  (objSort, pars, res, fields, gpidmap, idmap) <- prelude classMap comps
   (pre, post) <- trace ("after prelude:" ++ show (objSort, pars, res, fields)) $ prop (pars, res, fields)
   (fields', axioms) <- addAxioms objSort fields
   let blocks = zip [0..] $ getBlocks comps
   iSSAMap <- getInitialSSAMap
-  let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post False False False 0 M.empty M.empty
+  let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post False False False 0 M.empty idmap gpidmap
   _pres <- mapM (\p -> evalStateT (selfcomposition p) iEnv) blocks
   let pres = snd $ unzip _pres
 --  pres <- mapM (selfcomposition (objSort, pars, res, fields', iSSAMap, axioms, pre)) blocks

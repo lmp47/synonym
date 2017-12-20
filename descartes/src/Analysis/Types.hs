@@ -50,8 +50,9 @@ data Env = Env
   , _debug   :: Bool
   , _fuse    :: Bool
   , _numret  :: Int
-  , _pidmap  :: PidMap
+  , _pidmap  :: PidMap --local pid map
   , _idmap   :: IdMap
+  , _gpidmap :: PidMap --pid map for I/O
   }
 
 type EnvOp a = StateT Env Z3 a

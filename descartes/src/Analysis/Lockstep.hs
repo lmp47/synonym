@@ -41,16 +41,14 @@ verifyLs :: Bool -> ClassMap -> [Comparator] -> Prop -> Z3 (Result,Maybe String)
 verifyLs opt classMap _comps prop = do
  let comps = map rewrite _comps
      -- a = unsafePerformIO $ mapM_ (\(Comp _ f) -> putStrLn $ prettyPrint f) comps
- (objSort, pars, res, fields) <- prelude classMap comps
+ (objSort, pars, res, fields, gpidmap, idmap) <- prelude classMap comps
  (pre, post) <- trace ("after prelude:" ++ show (objSort, pars, res, fields)) $ prop (pars, res, fields)
  (fields', axioms) <- addAxioms objSort fields
  let blocks = zip [0..] $ getBlocks comps
  iSSAMap <- getInitialSSAMap
- -- get initial pid map
- let iPidMap = foldl  (\m (i,r) -> M.insert r i m) M.empty (zip [0..] res)
 -- let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post opt False False 0
  -- set debug and fuse
- let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post opt True False 0 iPidMap M.empty
+ let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post opt True False 0 M.empty idmap gpidmap
  ((res, mmodel),_) <- runStateT (analyser (Composition blocks [] [])) iEnv
  case res of 
   Unsat -> return (Unsat, Nothing)

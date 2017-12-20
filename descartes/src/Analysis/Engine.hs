@@ -87,7 +87,7 @@ getInitialSSAMap = do
   return $ M.singleton (Ident "null") (ast, iSort, 0)
 
 -- result: (ObjectType, Parameters, Results)
-prelude :: ClassMap -> [Comparator] -> Z3 (Sort, Params, [AST], Fields)
+prelude :: ClassMap -> [Comparator] -> Z3 (Sort, Params, [AST], Fields, PidMap, IdMap)
 prelude classMap comps = do
   let arity = length comps
   if arity == 0
@@ -99,14 +99,20 @@ prelude classMap comps = do
         fieldNames = getFieldNames objType classMap
 --    fields <- mapM (\f -> mkField f objSort) fieldNames
     let --fields' = foldl (\r (k,v) -> M.insert (Ident k) v r) M.empty $ zip fieldNames fields
-        parsId = concatMap (getParIdents . getParameters) comps
+        parsIds = map (getParIdents . getParameters) comps
+        parsId = concat parsIds
     -- methods
     fields' <- foldM (mkAttribute objSort) M.empty objFields
-    pars <- mapM (\par -> mkFreshConst par objSort) parsId
-    let pars' = foldl (\r (k,v) -> M.insert (Ident k) v r) M.empty $ zip parsId pars
+    parss <- mapM (mapM (\par -> mkFreshConst par objSort)) parsIds
+    let pars = concat parss
+    let parsIdpars = zip parsId pars
+    let (pars', idmap) = foldl (\(r,r') (k,v) -> (M.insert (Ident k) v r, M.insert v (Ident k) r')) (M.empty, M.empty) $ zip parsId pars
+    let pidmap = foldl (\m (ids,n) -> foldl (\r (k,v) -> M.insert k v r) m (map (\x -> (x, n)) ids)) M.empty $ zip parss [0..]
     intSort <- mkIntSort
     res <- mapM (\idx -> mkFreshConst ("res"++show idx) intSort) [1..arity]
-    return (objSort, pars', res, fields')
+    let idmap' = foldl (\r (k,v) -> M.insert k (Ident $ "res"++show v) r) idmap $ zip res [1..]
+    let pidmap' = foldl (\r (k,v) -> M.insert k v r) pidmap $ zip res [0..]
+    T.trace (show pidmap' ++ "\n" ++ show idmap') $ return (objSort, pars', res, fields', pidmap', idmap)
 
 -- SMT Utility Functions
 mkAttribute :: Sort -> Fields -> MemberDecl -> Z3 Fields

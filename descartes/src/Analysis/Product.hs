@@ -31,12 +31,12 @@ import qualified Debug.Trace as T
 verifyWithProduct :: ClassMap -> [Comparator] -> Prop -> Z3 (Result,Maybe String)
 verifyWithProduct classMap _comps prop = do
  let comps = _comps
- (objSort, pars, res, fields) <- prelude classMap comps
+ (objSort, pars, res, fields, gpidmap, idmap) <- prelude classMap comps
  (pre, post) <- prop (pars, res, fields)
  (fields', axioms) <- addAxioms objSort fields
  let blocks = zip [0..] $ getBlocks comps
  iSSAMap <- getInitialSSAMap
- let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post False False False 0 M.empty M.empty
+ let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post False False False 0 M.empty idmap gpidmap
  ((res, mmodel),_) <- runStateT (analyser blocks) iEnv
  case res of 
   Unsat -> return (Unsat, Nothing)
