@@ -35,6 +35,10 @@ type PidMap = Map AST Int
 -- Map from var AST to the Ident with which it is associated
 type IdMap = Map AST Ident
 
+-- Map from pid to control-flow tracker
+data Ctrl = Then Int | Else Int | Det Int deriving Eq
+type CtrlMap = Map Int [Ctrl]
+
 data Env = Env
   { _objSort :: Sort
   , _params  :: Params
@@ -53,11 +57,51 @@ data Env = Env
   , _pidmap  :: PidMap --local pid map
   , _idmap   :: IdMap
   , _gpidmap :: PidMap --pid map for I/O
+  , _ctrlmap :: CtrlMap
   }
 
 type EnvOp a = StateT Env Z3 a
 
 _default = (Unsat,Nothing)
+
+-- update the control-flow tracker
+newStmt :: Int -> EnvOp ()
+newStmt pid = do
+  s@Env{..} <- get
+  let stack = case M.lookup pid _ctrlmap of
+                Nothing -> error "missing ctrl stack"
+                Just s -> s
+  case popZero stack of
+    [] -> return ()
+    (Then top):rest ->
+      let new = (Then (top - 1):rest) in
+      put s{ _ctrlmap = M.insert pid new _ctrlmap }
+    (Else top):rest ->
+      let new = (Else (top - 1):rest) in
+      put s{ _ctrlmap = M.insert pid new _ctrlmap }
+    (Det top):rest ->
+      let new = (Det (top - 1):rest) in
+      put s{ _ctrlmap = M.insert pid new _ctrlmap }
+  where
+    popZero ((Then top):rest) = if top == 0 then popZero rest else ((Then top):rest)
+    popZero ((Else top):rest) = if top == 0 then popZero rest else ((Else top):rest)
+    popZero ((Det top):rest) = if top == 0 then popZero rest else ((Det top):rest)
+    popZero other = other
+      
+newBlock :: Int -> Int -> EnvOp ()
+newBlock pid len = do
+  s@Env{..} <- get
+  put s{ _ctrlmap = M.adjust (Det len:) pid _ctrlmap }
+  
+chooseThen :: Int -> Int -> EnvOp ()
+chooseThen pid len = do
+  s@Env{..} <- get
+  put s{ _ctrlmap = M.adjust (Then len:) pid _ctrlmap }
+
+chooseElse :: Int -> Int -> EnvOp ()
+chooseElse pid len = do
+  s@Env{..} <- get
+  put s{ _ctrlmap = M.adjust (Else len:) pid _ctrlmap}
 
 -- @ update the pre-condition
 updatePre :: AST -> EnvOp ()

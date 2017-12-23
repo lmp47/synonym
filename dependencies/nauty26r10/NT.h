@@ -10,6 +10,6 @@ typedef struct permutations {
 
 permutations* perms;
 
-struct permutations* use_nauty(int nv, size_t nde, size_t *v, int *d, int *e, int *lab, int *ptn);
+permutations* use_nauty(int nv, size_t nde, size_t *v, int *d, int *e, int *lab, int *ptn);
 
 void free_perms(void);

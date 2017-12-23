@@ -1,6 +1,12 @@
 #include "NT.h"
 
 void free_perms(void) {
+  /*
+  int i = 0;
+  for (; i < perms->count; i++) {
+    free(perms->perms[i]);
+  }
+  */
   free(perms->perms);
   free(perms);
 }
@@ -8,7 +14,7 @@ void free_perms(void) {
 // Save automorphisms
 void saveautom_traces(int count, int *perm, int n){
   if (perms->perms_size <= count) {
-    realloc(perms->perms, sizeof (int *) * (((size_t) count) + 5));
+    perms->perms = realloc(perms->perms, sizeof (int *) * (((size_t) count) + 5));
     perms->perms_size = count + 5;
   }
   if (perms->perms == NULL) {
@@ -39,7 +45,7 @@ void saveautom_nauty(int count, int *perm, int *orbits, int numorbits, int stabv
   saveautom_traces(count, perm, n);
 }
 
-struct permutations* use_nauty(int nv, size_t nde, size_t *v, int *d, int *e, int *lab, int *ptn) {
+permutations* use_nauty(int nv, size_t nde, size_t *v, int *d, int *e, int *lab, int *ptn) {
   // allocate orbits
   DYNALLSTAT(int, orbits, orbits_sz);
   DYNALLOC1(int, orbits, orbits_sz, nv, "Orbit allocation failed");
@@ -83,7 +89,7 @@ struct permutations* use_nauty(int nv, size_t nde, size_t *v, int *d, int *e, in
   int i = 0, j = 0;
   for (; i < perms->count; i++) {
     for (; j < nv; j++) {
-      printf("%d -> %d\n", i, perms->perms[i][j]);
+      printf("%d -> %d\n", j, perms->perms[i][j]);
     }
   }
   return perms;

@@ -49,9 +49,10 @@ verifyLsAs opt classMap _comps prop = do
  (fields', axioms) <- addAxioms objSort fields
  let blocks = zip [0..] $ getBlocks comps
  iSSAMap <- getInitialSSAMap
+ let iCtrlMap = foldl (\m k -> M.insert k [] m) M.empty [0..length(comps) - 1]
 -- let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post opt False False 0
  -- set debug and fuse
- let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post opt False True 0 M.empty idmap gpidmap
+ let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post opt False True 0 M.empty idmap gpidmap iCtrlMap
  ((res, mmodel),_) <- runStateT (analyser (Composition blocks [] [])) iEnv
  case res of 
   Unsat -> return (Unsat, Nothing)
@@ -101,7 +102,7 @@ analyse stmts = do
   ([], [], cs) -> analyse_conditionals cs
   ([], ls, cs)  -> analyse_loops ls cs []
   ((pid,Block []):rest, ls, cs) -> analyser (Composition rest ls cs)
-  ((pid,Block (bstmt:r1)):rest, ls, cs) -> case bstmt of
+  ((pid,Block (bstmt:r1)):rest, ls, cs) -> newStmt pid >> case bstmt of
    BlockStmt stmt -> analyser_stmt stmt (pid, Block r1) rest ls cs
    LocalVars mods ty vars -> do
     sort <- lift $ processType ty    
@@ -123,28 +124,41 @@ analyse stmts = do
 analyse_conditionals :: [(Int,Block)] -> EnvOp (Result,Maybe Model)
 analyse_conditionals conds = do
   env@Env{..} <- get
+  -- TODO: check that ctrl flow matches
+  let ctrl = map (\pid -> safeLookup "check ctrl" pid _ctrlmap) [0..(length conds) - 1]
+  --let k = if and $ map (== head ctrl) (tail ctrl)
+  --       then T.trace "match"
+  --       else T.trace "mismatch"
+  -- TODO: if it does, try to find symmetries
   pre' <- lift $ simplify _pre
-  gr <- lift $ makeGraph pre' _post [1] _idmap (_pidmap `M.union` _gpidmap)
-  let k = T.trace (show gr) $ unsafePerformIO $ getChar
-  tuples <- k `seq` mapM convert conds
+  rgr <- lift $ makeRGraph pre' _post (M.keys _ctrlmap) _idmap (_pidmap `M.union` _gpidmap)
+  let gr = fromRGraph rgr
+  symm <- T.trace (show gr) $ lift $ getSymmetries gr
+  tuples <- mapM convert conds
   let choices = map (\(x, _, _) -> x) tuples
   choice <- lift $ mkOr choices
   -- preChoice <- lift $ mkAnd [_pre, choice]
   decisions <- lift $ allSAT _pre choices
   let decisions' = map (\(ast, bools) -> (ast, zipWith (\b (_, th, el) -> if b then th else el) bools tuples)) decisions
-  combine env decisions'
+  combine env decisions tuples
  where
-   analyse_branch (phi, branches) = do
+   analyse_branch (phi, bools) tuples = do
     env@Env{..} <- get
     newPre <- lift $ mkAnd [_pre, phi]
     updatePre newPre
+    branches <- sequence $ zipWith
+                  (\b (_, (thpid, Block th), (elpid, Block el)) ->
+                    if b
+                    then chooseThen thpid (length th) >> return (thpid, Block th)
+                    else chooseElse elpid (length el) >> return (elpid, Block el))
+                  bools tuples
     analyser (Composition branches [] [])
-   combine e [] = return _default
-   combine e (d:ds) = do
+   combine e [] _ = return _default
+   combine e (d:ds) tuples = do
      put e
-     res <- analyse_branch d
+     res <- analyse_branch d tuples
      case res of
-       (Unsat,_) -> combine e ds
+       (Unsat,_) -> combine e ds tuples
        _ -> return res
    -- Convert each conditional-led program of form
    --   (pid, Block (BlockStmt (IfThenElse cond s1 s2):r1))
@@ -172,7 +186,7 @@ analyse_loops loops cs rest =
 analyser_stmt :: Stmt -> (Int,Block) -> [(Int,Block)] -> [(Int,Block)] -> [(Int,Block)] -> EnvOp (Result,Maybe Model)
 analyser_stmt stmt (pid, Block r1) rest ls cs =
  case stmt of
-  StmtBlock (Block block) -> analyser (Composition ((pid, Block (block ++ r1)):rest) ls cs)
+  StmtBlock (Block block) -> newBlock pid (length block) >> analyser (Composition ((pid, Block (block ++ r1)):rest) ls cs)
   Assume expr -> do
    assume expr
    analyser (Composition ((pid, Block r1):rest) ls cs)

@@ -112,7 +112,7 @@ prelude classMap comps = do
     res <- mapM (\idx -> mkFreshConst ("res"++show idx) intSort) [1..arity]
     let idmap' = foldl (\r (k,v) -> M.insert k (Ident $ "res"++show v) r) idmap $ zip res [1..]
     let pidmap' = foldl (\r (k,v) -> M.insert k v r) pidmap $ zip res [0..]
-    T.trace (show pidmap' ++ "\n" ++ show idmap') $ return (objSort, pars', res, fields', pidmap', idmap)
+    T.trace (show pidmap' ++ "\n" ++ show idmap') $ return (objSort, pars', res, fields', pidmap', idmap')
 
 -- SMT Utility Functions
 mkAttribute :: Sort -> Fields -> MemberDecl -> Z3 Fields
