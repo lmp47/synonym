@@ -124,21 +124,17 @@ analyse stmts = do
 analyse_conditionals :: [(Int,Block)] -> EnvOp (Result,Maybe Model)
 analyse_conditionals conds = do
   env@Env{..} <- get
-  -- TODO: check that ctrl flow matches
-  let ctrl = map (\pid -> safeLookup "check ctrl" pid _ctrlmap) [0..(length conds) - 1]
-  --let k = if and $ map (== head ctrl) (tail ctrl)
-  --       then T.trace "match"
-  --       else T.trace "mismatch"
-  -- TODO: if it does, try to find symmetries
-  pre' <- lift $ simplify _pre
-  rgr <- lift $ makeRGraph pre' _post (M.keys _ctrlmap) _idmap (_pidmap `M.union` _gpidmap)
-  let gr = fromRGraph rgr
-  symm <- T.trace (show gr) $ lift $ getSymmetries gr
   tuples <- mapM convert conds
   let choices = map (\(x, _, _) -> x) tuples
+  -- check that ctrl flow matches, and if it does, try to find symmetries
+  let ctrl = map (\pid -> safeLookup "check ctrl" pid _ctrlmap) [0..(length conds) - 1]
+  preSBP <- if and $ map (== head ctrl) (tail ctrl)
+            then do
+                 sbp <- T.trace "match" getSBP
+                 lift $ mkAnd [_pre, sbp]
+            else T.trace "mismatch" $ return _pre
   choice <- lift $ mkOr choices
-  -- preChoice <- lift $ mkAnd [_pre, choice]
-  decisions <- lift $ allSAT _pre choices
+  decisions <- lift $ allSAT preSBP choices
   let decisions' = map (\(ast, bools) -> (ast, zipWith (\b (_, th, el) -> if b then th else el) bools tuples)) decisions
   combine env decisions tuples
  where

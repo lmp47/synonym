@@ -1,4 +1,4 @@
-{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE RecordWildCards #-}
 -------------------------------------------------------------------------------
 -- Module    :  Analysis.Symmetry
 -- Copyright :  (c) 2017 Lauren Pick
@@ -60,11 +60,55 @@ fromRGraph rg =
       (\(lab,ptn) (_,vals) -> (vals ++ lab, (take (length vals - 1) (repeat 1)) ++ 0:ptn))
       ([], []) (M.toList $ color rg)
 
-getSymmetries :: Graph -> Z3 Perms
-getSymmetries g = do
+getSymmetries :: EnvOp [[(Int, Int)]]
+getSymmetries = do
+  env@Env{..} <- get
+  pre' <- lift $ simplify _pre
+  let pids = M.keys _ctrlmap
+  rgr <- lift $ makeRGraph pre' _post pids _idmap (_pidmap `M.union` _gpidmap)
+  let g = fromRGraph rgr
   symm <- liftIO $ getSymm (nv g) (nde g) (v g) (d g) (e g) (lab g) (ptn g)
-  --if count symm > 0 then error "several" else return symm
-  return symm
+  let symm' = map (filter (\(x, y) -> x /= y) . zip [0..length pids - 1]) (perms symm)
+  return (filter (/= []) symm')
+
+getSBP :: EnvOp AST
+getSBP = do
+  -- remove "last" part of cycle to eliminate redundancy
+  symms <- getSymmetries
+  pps <- T.trace (show $ length symms) $ lift $ mapM getPP symms
+  res <- lift $ mkAnd (concat pps)
+  astStr <- lift $ astToString res
+  T.trace ("SBP: " ++ astStr) $ return res
+
+getPP :: [(Int, Int)] -> Z3 [AST]
+getPP symm = do
+  -- make gs
+  lgs <- mapM (\(x,y) -> do
+                         x <- mkIntNum x
+                         y <- mkIntNum y
+                         le <- mkLe x y
+                         ge <- mkGe x y
+                         return (le, ge)) symm
+  case lgs of
+    (lg:lgs) -> do
+                p <- mkFreshBoolVar "p"
+                acc <- mkAnd [fst lg, p]
+                chain p lg lgs [acc]
+    _ -> error "getPP: empty perm"  
+ where
+ chain :: AST -> (AST,AST) -> [(AST, AST)] -> [AST] -> Z3 [AST]
+ chain _ _ [] acc = return acc
+ chain prevp prevlg [lg] acc = do
+   lhs <- mkImplies prevp (snd prevlg)
+   pp <- mkImplies lhs (fst lg)
+   return (pp:acc)
+ chain prevp prevg (lg:lgs) acc = do
+   currp <- mkFreshBoolVar "p"
+   rhs <- mkAnd [fst lg, currp]
+   lhs <- mkImplies prevp (snd prevg)
+   pp <- mkImplies lhs rhs
+   chain currp lg lgs (pp:acc)
+  
 
 data RGraph = RGraph
   { numVerts :: Int --nv
@@ -275,7 +319,7 @@ makeRGraph pre post pids idmap pidmap = do
                              , colorbk = bk }
               case pop siblings of
                 (id',(sib, t):sibs):sibs' -> handle (id', sib, numVerts g', t) ((id' + 1, sibs):sibs') g'
-                _ -> T.trace ("returning w sibs: " ++ show (siblings)) return g'
+                _ -> return g'
             else do -- function application
               --let Ident str = safeLookup "handle" ast idmap
               let k = T.trace (sym ++ " app, " ++ (show id))
@@ -333,7 +377,7 @@ makeRGraph pre post pids idmap pidmap = do
         bodyStr <- astToString body
         handle (ch, body, numVerts g', Arg 1) ((ch + 1, args):siblings) g'
       Z3_VAR_AST       -> do
-        str <- T.trace ("var, " ++ (show id)) $ astToString ast
+        str <- astToString ast
         let (n, bk) = colToInt (Var (tag, str)) (colorbk g)
         let g' = g { startEdge = 0:(startEdge g)
                    , outDeg = 0:outDeg g
@@ -341,7 +385,7 @@ makeRGraph pre post pids idmap pidmap = do
                    , colorbk = bk }
         case pop siblings of
           (id',(sib, t):sibs):sibs' -> handle (id', sib, numVerts g', t) ((id' + 1, sibs):sibs') g'
-          _ -> T.trace ("returning w siblength: " ++ show (length siblings)) return g'
+          _ -> return g'
       _                 -> do
         astStr <- astToString ast
         error ("unexpected AST: " ++ astStr)
