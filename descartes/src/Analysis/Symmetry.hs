@@ -27,7 +27,8 @@ sepPid ast idmap pidmap =
   case M.lookup ast pidmap of
     Just pid -> do
       astStr <- astToString ast
-      let Ident str = T.trace ("looking up " ++ (show ast)) $ safeLookup "sepPid" ast idmap
+      --let Ident str = T.trace ("looking up " ++ (show ast)) $ safeLookup "sepPid" ast idmap
+      let Ident str = safeLookup "sepPid" ast idmap
       return (take (length str - length (show pid)) str, Just pid)
     _ -> return ("nondet", Nothing)
     
@@ -216,9 +217,14 @@ makeRGraph pre post pids idmap pidmap = do
                      , endpt = (numVerts g + 1) : endpt g
                      , color = updateColor orp (numVerts g) (color g) } in
           handle (numVerts g + 1, ast, numVerts g', N) [] g'
-        
+  pop :: [(Int, [(AST, Tag)])] -> [(Int, [(AST, Tag)])]
+  pop siblings =
+    case siblings of
+      (_, []):rest -> pop rest
+      _ -> siblings
   handle :: (Int, AST, Int, Tag) -> [(Int, [(AST, Tag)])] -> RGraph -> Z3 RGraph
   handle (id, ast, ch, tag) siblings g = do
+    --kind <- T.trace ((show id) ++ ", " ++ (show $ numVerts g) ++ ", " ++ (show ch) ++ ", " ++ (show siblings)) $ getAstKind ast
     kind <- getAstKind ast
     case kind of
       Z3_NUMERAL_AST    -> do
@@ -228,9 +234,8 @@ makeRGraph pre post pids idmap pidmap = do
                    , outDeg = 0:outDeg g
                    , color = updateColor n id (color g)
                    , colorbk = bk }
-        case siblings of
+        case pop siblings of
           (id',(sib, t):sibs):sibs' -> handle (id', sib, numVerts g', t) ((id' + 1, sibs):sibs') g'
-          (_,[]):(id',(sib, t):sibs):sibs' -> handle (id', sib, numVerts g', t) ((id' + 1, sibs):sibs') g'
           _ -> return g'
       Z3_APP_AST        -> do
         app <- toApp ast
@@ -254,8 +259,7 @@ makeRGraph pre post pids idmap pidmap = do
             if nParams == 0
             then do -- constant
               (str, pid) <- sepPid ast idmap pidmap
-              let k = T.trace str
-              let (n, bk) = k $ colToInt (Var (tag, str)) (colorbk g)
+              let (n, bk) = colToInt (Var (tag, str)) (colorbk g)
               let g' = case pid of
                          Nothing ->
                            g { startEdge = 0:startEdge g
@@ -269,13 +273,12 @@ makeRGraph pre post pids idmap pidmap = do
                              , endpt = safeLookup ("pidToVert: " ++ show pid) pid pidToVert : endpt g
                              , color = updateColor n id (color g)
                              , colorbk = bk }
-              case siblings of
+              case pop siblings of
                 (id',(sib, t):sibs):sibs' -> handle (id', sib, numVerts g', t) ((id' + 1, sibs):sibs') g'
-                (_,[]):(id',(sib, t):sibs):sibs' -> handle (id', sib, numVerts g', t) ((id' + 1, sibs):sibs') g'
-                _ -> return g'
+                _ -> T.trace ("returning w sibs: " ++ show (siblings)) return g'
             else do -- function application
               --let Ident str = safeLookup "handle" ast idmap
-              let k = T.trace sym
+              let k = T.trace (sym ++ " app, " ++ (show id))
               let (n, bk) = k $ colToInt (Var (tag, sym)) (colorbk g)
               let endpts = map (+ ch) [0..nParams - 1]
               let g' = g { numVerts = numVerts g + nParams
@@ -330,16 +333,15 @@ makeRGraph pre post pids idmap pidmap = do
         bodyStr <- astToString body
         handle (ch, body, numVerts g', Arg 1) ((ch + 1, args):siblings) g'
       Z3_VAR_AST       -> do
-        str <- astToString ast
+        str <- T.trace ("var, " ++ (show id)) $ astToString ast
         let (n, bk) = colToInt (Var (tag, str)) (colorbk g)
         let g' = g { startEdge = 0:(startEdge g)
                    , outDeg = 0:outDeg g
                    , color = updateColor n id (color g)
                    , colorbk = bk }
-        case siblings of
+        case pop siblings of
           (id',(sib, t):sibs):sibs' -> handle (id', sib, numVerts g', t) ((id' + 1, sibs):sibs') g'
-          (_,[]):(id',(sib, t):sibs):sibs' -> handle (id', sib, numVerts g', t) ((id' + 1, sibs):sibs') g'
-          _ -> return g'
+          _ -> T.trace ("returning w siblength: " ++ show (length siblings)) return g'
       _                 -> do
         astStr <- astToString ast
         error ("unexpected AST: " ++ astStr)

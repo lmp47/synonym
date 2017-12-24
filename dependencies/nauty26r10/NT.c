@@ -1,12 +1,10 @@
 #include "NT.h"
 
 void free_perms(void) {
-  /*
   int i = 0;
   for (; i < perms->count; i++) {
     free(perms->perms[i]);
   }
-  */
   free(perms->perms);
   free(perms);
 }
@@ -64,7 +62,7 @@ permutations* use_nauty(int nv, size_t nde, size_t *v, int *d, int *e, int *lab,
   memcpy(sg.v, v, nv * sizeof(size_t));
   memcpy(sg.d, d, nv * sizeof(int));
   memcpy(sg.e, e, nde * sizeof(int));
-  put_sg(stdout, &sg, 1, 30); // print graph
+  //put_sg(stdout, &sg, 1, 30); // print graph
   // allocate space for perms
   perms = malloc(sizeof(permutations));
   if (perms == NULL) {
@@ -86,11 +84,13 @@ permutations* use_nauty(int nv, size_t nde, size_t *v, int *d, int *e, int *lab,
   printf("\n");
   DYNFREE(orbits, orbits_sz);
   SG_FREE(sg);
+  /*
   int i = 0, j = 0;
   for (; i < perms->count; i++) {
     for (; j < nv; j++) {
       printf("%d -> %d\n", j, perms->perms[i][j]);
     }
   }
+  */
   return perms;
 }
