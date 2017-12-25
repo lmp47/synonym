@@ -71,23 +71,24 @@ getSymmetries = do
   let symm' = map (filter (\(x, y) -> x /= y) . zip [0..length pids - 1]) (perms symm)
   return (filter (/= []) symm')
 
-getSBP :: EnvOp AST
-getSBP = do
+getSBP :: Map Int AST -> EnvOp AST
+getSBP m = do
   -- remove "last" part of cycle to eliminate redundancy
   symms <- getSymmetries
-  pps <- T.trace (show $ length symms) $ lift $ mapM getPP symms
+  pps <- T.trace (show $ length symms) $ lift $ mapM (getPP m) symms
   res <- lift $ mkAnd (concat pps)
   astStr <- lift $ astToString res
   T.trace ("SBP: " ++ astStr) $ return res
 
-getPP :: [(Int, Int)] -> Z3 [AST]
-getPP symm = do
+getPP :: Map Int AST -> [(Int, Int)] -> Z3 [AST]
+getPP m symm = do
+  let symm' = filter (\(x,y) -> M.lookup x m /= Nothing && M.lookup y m /= Nothing) symm 
   -- make gs
   lgs <- mapM (\(x,y) -> do
-                         x <- mkIntNum x
-                         y <- mkIntNum y
-                         le <- mkLe x y
-                         ge <- mkGe x y
+                         let x' = safeLookup "getPP" x m
+                             y' = safeLookup "getPP" y m
+                         le <- mkImplies x' y'
+                         ge <- mkImplies x' y'
                          return (le, ge)) symm
   case lgs of
     (lg:lgs) -> do
@@ -205,9 +206,11 @@ makeRGraph pre post pids idmap pidmap = do
                                   , colorbk = bk }
   astStr <- astToString pre
   let k = T.trace astStr
-  pres <- k $ extractConj pre
+  astStr' <- astToString post
+  pres <- k $ T.trace astStr' $ extractConj pre
   posts <- extractConj post
-  foldM (handleConj (fst $ colToInt OrPre defaultColInt)) startRGraph pres
+  preGraph <- foldM (handleConj (fst $ colToInt OrPre defaultColInt)) startRGraph pres
+  foldM (handleConj (fst $ colToInt OrPost (colorbk preGraph))) preGraph posts
  where
   pidToVert :: Map Int Int
   pidToVert = M.fromList $ zip pids [0..]

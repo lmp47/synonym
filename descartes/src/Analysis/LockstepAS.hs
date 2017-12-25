@@ -130,7 +130,8 @@ analyse_conditionals conds = do
   let ctrl = map (\pid -> safeLookup "check ctrl" pid _ctrlmap) [0..(length conds) - 1]
   preSBP <- if and $ map (== head ctrl) (tail ctrl)
             then do
-                 sbp <- T.trace "match" getSBP
+                 let pidCondMap = foldl (\m (x, (pid, _), _) -> M.insert pid x m) M.empty tuples
+                 sbp <- T.trace "match" $ getSBP pidCondMap
                  lift $ mkAnd [_pre, sbp]
             else T.trace "mismatch" $ return _pre
   choice <- lift $ mkOr choices
