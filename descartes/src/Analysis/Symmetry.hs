@@ -88,7 +88,7 @@ getPP m symm = do
                          let x' = safeLookup "getPP" x m
                              y' = safeLookup "getPP" y m
                          le <- mkImplies x' y'
-                         ge <- mkImplies x' y'
+                         ge <- mkImplies y' x'
                          return (le, ge)) symm
   case lgs of
     (lg:lgs) -> do

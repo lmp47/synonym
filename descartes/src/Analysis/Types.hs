@@ -91,7 +91,9 @@ newStmt pid = do
 newBlock :: Int -> Int -> EnvOp ()
 newBlock pid len = do
   s@Env{..} <- get
-  put s{ _ctrlmap = M.adjust (Det len:) pid _ctrlmap }
+  if M.lookup pid _ctrlmap /= Just []
+  then put s{ _ctrlmap = M.adjust (Det len:) pid _ctrlmap }
+  else return ()
   
 chooseThen :: Int -> Int -> EnvOp ()
 chooseThen pid len = do
