@@ -10,6 +10,7 @@ import qualified Data.Map as M
 import Control.Monad.State.Strict
 import Language.Java.Syntax
 import Language.Java.Pretty
+import Data.Foldable
 
 import Analysis.Types
 import Analysis.Util
@@ -27,7 +28,6 @@ sepPid ast idmap pidmap =
   case M.lookup ast pidmap of
     Just pid -> do
       astStr <- astToString ast
-      --let Ident str = T.trace ("looking up " ++ (show ast)) $ safeLookup "sepPid" ast idmap
       let Ident str = safeLookup "sepPid" ast idmap
       return (take (length str - length (show pid)) str, Just pid)
     _ -> return ("nondet", Nothing)
@@ -43,46 +43,56 @@ data Graph = Graph
   , ptn :: [Int]
   } deriving Show
 
-fromRGraph :: RGraph -> Graph
-fromRGraph rg =
-  let (lab, ptn) = mkLabPtn in
-  Graph { nv = numVerts rg
-        , nde = numEdges rg
-        , v = reverse $ startEdge rg
-        , d = reverse $ outDeg rg
-        , e = reverse $ endpt rg
+fromPreGraph :: PreGraph -> Graph
+fromPreGraph pg =
+  let (v, d, e) = mkVDE (edges pg) (outDeg pg) (numEdges pg) 0 (numVerts pg - 1) ([],[],[])
+      (lab, ptn) = mkLabPtn in
+  Graph { nv = numVerts pg
+        , nde = numEdges pg
+        , v = v
+        , d = d
+        , e = e
         , lab = lab
         , ptn = ptn
         }
  where
+  mkVDE edges outDegs nde ndeAcc vert (v, d, e) =
+    if vert < 0
+    then (v, d, e)
+    else
+      let deg = safeLookup "mkVDE" vert outDegs in
+      if deg == 0
+      then mkVDE edges outDegs nde ndeAcc (vert - 1) (0:v, 0:d, e)
+      else let vde' = ((nde - ndeAcc - deg):v, deg:d, (safeLookup "mkVDE" vert edges)++e) in
+        mkVDE edges outDegs nde (ndeAcc + deg) (vert - 1) vde'
   mkLabPtn =
     foldl
       (\(lab,ptn) (_,vals) -> (vals ++ lab, (take (length vals - 1) (repeat 1)) ++ 0:ptn))
-      ([], []) (M.toList $ color rg)
+      ([], []) (M.toList $ color pg)
 
 getSymmetries :: EnvOp [[(Int, Int)]]
 getSymmetries = do
   env@Env{..} <- get
   pre' <- lift $ simplify _pre
+  post' <- lift $ simplify _post
   let pids = M.keys _ctrlmap
-  rgr <- lift $ makeRGraph pre' _post pids _idmap (_pidmap `M.union` _gpidmap)
-  let g = fromRGraph rgr
+  pgr <- lift $ makePreGraph pre' post' pids _idmap (_pidmap `M.union` _gpidmap)
+  let g = fromPreGraph pgr
   symm <- liftIO $ getSymm (nv g) (nde g) (v g) (d g) (e g) (lab g) (ptn g)
   let symm' = map (filter (\(x, y) -> x /= y) . zip [0..length pids - 1]) (perms symm)
-  return (filter (/= []) symm')
+  T.trace ("symm: " ++ (show $ perms symm)) $ return (filter (/= []) symm')
 
 getSBP :: Map Int AST -> EnvOp AST
 getSBP m = do
   -- remove "last" part of cycle to eliminate redundancy
   symms <- getSymmetries
-  pps <- T.trace (show $ length symms) $ lift $ mapM (getPP m) symms
+  pps <- lift $ mapM (getPP m) symms
   res <- lift $ mkAnd (concat pps)
-  astStr <- lift $ astToString res
-  T.trace ("SBP: " ++ astStr) $ return res
+  return res
 
 getPP :: Map Int AST -> [(Int, Int)] -> Z3 [AST]
 getPP m symm = do
-  let symm' = filter (\(x,y) -> M.lookup x m /= Nothing && M.lookup y m /= Nothing) symm 
+  let symm' = filter (\(x,y) -> M.lookup x m /= Nothing && M.lookup y m /= Nothing) symm
   -- make gs
   lgs <- mapM (\(x,y) -> do
                          let x' = safeLookup "getPP" x m
@@ -111,12 +121,11 @@ getPP m symm = do
    chain currp lg lgs (pp:acc)
   
 
-data RGraph = RGraph
+data PreGraph = PreGraph
   { numVerts :: Int --nv
   , numEdges :: Int  --nde
-  , startEdge :: [Int] --v (reversed)
-  , outDeg :: [Int]  --d (reversed)
-  , endpt :: [Int] --e (reversed)
+  , edges :: Map Int [Int]
+  , outDeg :: Map Int Int
   , color :: Map Int [Int] -- color int to vertex int
   , colorbk :: ColInt -- color label and int bookkeeping
   } deriving Show
@@ -178,14 +187,13 @@ colToInt other (n, ci, ic) =
     Just n -> (n, (n, ci, ic))
     
 
-defaultRGraph :: RGraph
-defaultRGraph = RGraph { numVerts = 0
-                       , numEdges = 0
-                       , startEdge = []
-                       , outDeg = []
-                       , endpt = []
-                       , color = M.empty
-                       , colorbk = defaultColInt }
+defaultPreGraph :: PreGraph
+defaultPreGraph = PreGraph { numVerts = 0
+                         , numEdges = 0
+                         , edges = M.empty
+                         , outDeg = M.empty
+                         , color = M.empty
+                         , colorbk = defaultColInt }
 
 updateColor :: Int -> Int -> Map Int [Int] -> Map Int [Int]
 updateColor color i m =
@@ -195,21 +203,19 @@ updateColor color i m =
 
 -- Given a list of precondition conjuncts, postcondition conjuncts,
 -- and pids, create graph
-makeRGraph :: AST -> AST -> [Int] -> IdMap -> PidMap -> Z3 RGraph
-makeRGraph pre post pids idmap pidmap = do
+makePreGraph :: AST -> AST -> [Int] -> IdMap -> PidMap -> Z3 PreGraph
+makePreGraph pre post pids idmap pidmap = do
   let len = length pids
   let (col, bk) = colToInt Id defaultColInt
-  let startRGraph = defaultRGraph { numVerts = len
-                                  , startEdge = take len $ repeat 0
-                                  , outDeg = take len $ repeat 0
-                                  , color = M.fromList $ [(col, [0..len - 1])]
-                                  , colorbk = bk }
+  let startGraph = defaultPreGraph { numVerts = len
+                                   , outDeg = foldl (\m x -> M.insert x 0 m) M.empty [0..len-1]
+                                   , color = M.fromList $ [(col, [0..len - 1])]
+                                   , colorbk = bk }
   astStr <- astToString pre
-  let k = T.trace astStr
   astStr' <- astToString post
-  pres <- k $ T.trace astStr' $ extractConj pre
+  pres <- extractConj pre
   posts <- extractConj post
-  preGraph <- foldM (handleConj (fst $ colToInt OrPre defaultColInt)) startRGraph pres
+  preGraph <- foldM (handleConj (fst $ colToInt OrPre defaultColInt)) startGraph pres
   foldM (handleConj (fst $ colToInt OrPost (colorbk preGraph))) preGraph posts
  where
   pidToVert :: Map Int Int
@@ -239,51 +245,41 @@ makeRGraph pre post pids idmap pidmap = do
         if sym == "or"
         then do
           nParams <- getAppNumArgs app
-          arg:args <- mapM (\i -> getAppArg app i) [0..(nParams-1)]
-          let g' = g { numVerts = numVerts g + 1 + nParams
+          args <- mapM (\i -> getAppArg app i) [0..(nParams-1)]
+          let g' = g { numVerts = numVerts g + 1
                      , numEdges = numEdges g + nParams
-                     , startEdge = (numEdges g):(startEdge g)
-                     , outDeg = nParams:outDeg g
-                     , endpt = (map (+ (numVerts g)) [1..nParams]) ++ endpt g
+                     , outDeg = M.insert (numVerts g) nParams (outDeg g)
                      , color = updateColor orp (numVerts g) (color g) }
           let args' = map (\a -> (a, N)) args
-          handle (numVerts g + 1, arg, numVerts g', N) [(numVerts g + 2, args')] g'
+          foldlM (\gr (arg, atag) -> handle (arg, atag) (numVerts g) gr) g' args'
         else
-          let g' = g { numVerts = numVerts g + 2
+          let g' = g { numVerts = numVerts g + 1
                      , numEdges = numEdges g + 1
-                     , startEdge = (numEdges g):(startEdge g)
-                     , outDeg = 1:outDeg g
-                     , endpt = (numVerts g + 1) : endpt g
+                     , outDeg = M.insert (numVerts g) 1 (outDeg g)
                      , color = updateColor orp (numVerts g) (color g) } in
-          handle (numVerts g + 1, ast, numVerts g', N) [] g'
+          handle (ast, N) (numVerts g) g'
       _ -> 
-          let g' = g { numVerts = numVerts g + 2
+          let g' = g { numVerts = numVerts g + 1
                      , numEdges = numEdges g + 1
-                     , startEdge = (numEdges g):(startEdge g)
-                     , outDeg = 1:outDeg g
-                     , endpt = (numVerts g + 1) : endpt g
+                     , outDeg = M.insert (numVerts g) 1 (outDeg g)
                      , color = updateColor orp (numVerts g) (color g) } in
-          handle (numVerts g + 1, ast, numVerts g', N) [] g'
-  pop :: [(Int, [(AST, Tag)])] -> [(Int, [(AST, Tag)])]
-  pop siblings =
-    case siblings of
-      (_, []):rest -> pop rest
-      _ -> siblings
-  handle :: (Int, AST, Int, Tag) -> [(Int, [(AST, Tag)])] -> RGraph -> Z3 RGraph
-  handle (id, ast, ch, tag) siblings g = do
-    --kind <- T.trace ((show id) ++ ", " ++ (show $ numVerts g) ++ ", " ++ (show ch) ++ ", " ++ (show siblings)) $ getAstKind ast
+          handle (ast, N) (numVerts g) g'
+  handle :: (AST, Tag) -> Int -> PreGraph -> Z3 PreGraph
+  handle (ast, tag) parent g = do
+    let id = T.trace (show g) $ numVerts g
+    let g' = g { numVerts = numVerts g + 1
+               , edges = case M.lookup parent (edges g) of
+                           Nothing -> M.insert parent [id] (edges g)
+                           Just es -> M.insert parent (id:es) (edges g) }
     kind <- getAstKind ast
     case kind of
       Z3_NUMERAL_AST    -> do
         str <- getNumeralString ast
-        let (n, bk) = colToInt (Num (tag, read str)) (colorbk g)
-        let g' = g { startEdge = 0:(startEdge g)
-                   , outDeg = 0:outDeg g
-                   , color = updateColor n id (color g)
-                   , colorbk = bk }
-        case pop siblings of
-          (id',(sib, t):sibs):sibs' -> handle (id', sib, numVerts g', t) ((id' + 1, sibs):sibs') g'
-          _ -> return g'
+        let (n, bk) = colToInt (Num (tag, read str)) (colorbk g')
+        let g'' = g' { outDeg = M.insert id 0 (outDeg g')
+                     , color = updateColor n id (color g')
+                     , colorbk = bk }
+        return g''
       Z3_APP_AST        -> do
         app <- toApp ast
         fn <- getAppDecl app
@@ -293,6 +289,8 @@ makeRGraph pre post pids idmap pidmap = do
         let col = if sym == "<="
                   then Just Lte
                   else if sym == "="
+                    then Just Eq
+                  else if sym == "iff"
                     then Just Eq
                   else if sym == "not"
                     then Just Not
@@ -306,60 +304,44 @@ makeRGraph pre post pids idmap pidmap = do
             if nParams == 0
             then do -- constant
               (str, pid) <- sepPid ast idmap pidmap
-              let (n, bk) = colToInt (Var (tag, str)) (colorbk g)
-              let g' = case pid of
+              let (n, bk) = colToInt (Var (tag, str)) (colorbk g')
+              let g'' = case pid of
                          Nothing ->
-                           g { startEdge = 0:startEdge g
-                             , outDeg = 0:outDeg g
-                             , color = updateColor n id (color g)
-                             , colorbk = bk }
+                           g' { outDeg = M.insert id 0 (outDeg g')
+                              , color = updateColor n id (color g')
+                              , colorbk = bk }
                          Just pid ->
-                           g { numEdges = numEdges g + 1
-                             , startEdge = (numEdges g):(startEdge g)
-                             , outDeg = 1:outDeg g
-                             , endpt = safeLookup ("pidToVert: " ++ show pid) pid pidToVert : endpt g
-                             , color = updateColor n id (color g)
-                             , colorbk = bk }
-              case pop siblings of
-                (id',(sib, t):sibs):sibs' -> handle (id', sib, numVerts g', t) ((id' + 1, sibs):sibs') g'
-                _ -> return g'
+                           g' { numEdges = 1 + numEdges g'
+                              , edges = M.insert id [safeLookup ("pidToVert: " ++ show pid) pid pidToVert] (edges g')
+                              , outDeg = M.insert id 1 (outDeg g')
+                              , color = updateColor n id (color g')
+                              , colorbk = bk }
+              return g''
             else do -- function application
               --let Ident str = safeLookup "handle" ast idmap
-              let k = T.trace (sym ++ " app, " ++ (show id))
-              let (n, bk) = k $ colToInt (Var (tag, sym)) (colorbk g)
-              let endpts = map (+ ch) [0..nParams - 1]
-              let g' = g { numVerts = numVerts g + nParams
-                         , numEdges = numEdges g + nParams
-                         , startEdge = (numEdges g):(startEdge g)
-                         , outDeg = nParams:outDeg g
-                         , endpt = endpts ++ endpt g
-                         , color = updateColor n id (color g)
-                         , colorbk = bk }
-              let (arg, atag):args' = zipWith (\a i -> (a, Arg i)) args [1..]
-              handle (ch, arg, numVerts g', atag) ((ch + 1, args'):siblings) g'
+              let (n, bk) = colToInt (Var (tag, sym)) (colorbk g')
+              let g'' = g' { numEdges = nParams + numEdges g'
+                           , outDeg = M.insert id nParams (outDeg g')
+                           , color = updateColor n id (color g')
+                           , colorbk = bk }
+              let args' = zipWith (\a i -> (a, Arg i)) args [1..]
+              foldlM (\gr (arg, atag) -> handle (arg, atag) id gr) g'' args'
           Just col -> 
             case col of
               Not ->
-                let (n, _) = colToInt Not (colorbk g) in
-                let g' = g { numVerts = numVerts g + 1
-                           , numEdges = numEdges g + 1
-                           , startEdge = (numEdges g):(startEdge g)
-                           , outDeg = 1:outDeg g
-                           , endpt = ch : endpt g
-                           , color = updateColor n id (color g)} in
-                handle (ch, head args, numVerts g', N) siblings g'
+                let (n, _) = colToInt Not (colorbk g') in
+                let g'' = g' { outDeg = M.insert id 0 (outDeg g')
+                             , color = updateColor n id (color g')} in
+                handle (head args, N) id g''
               _ ->
-                let (n, _) = colToInt col (colorbk g) in
-                let g' = g { numVerts = numVerts g + 2
-                           , numEdges = numEdges g + 2
-                           , startEdge = (numEdges g):(startEdge g)
-                           , outDeg = 2:outDeg g
-                           , endpt = ch + 1 : ch : endpt g
-                           , color = updateColor n id (color g)} in
+                let (n, _) = colToInt col (colorbk g') in
+                let g'' = g' { numEdges = numEdges g' + 2
+                             , outDeg = M.insert id 2 (outDeg g')
+                             , color = updateColor n id (color g')} in
                 case args of
                   [left, right] ->
                     let (ltag, rtag) = if col == Lte then (Arg 1, Arg 2) else (N, N) in
-                    handle (ch, left, numVerts g', ltag) ((ch + 1, [(right, rtag)]):siblings) g'
+                    handle (left, ltag) id g'' >>= handle (right, rtag) id
                   _ -> error "too many args"
       Z3_QUANTIFIER_AST -> do
         numBoundVars <- getQuantifierNumBound ast 
@@ -368,27 +350,19 @@ makeRGraph pre post pids idmap pidmap = do
         isExists <- isQuantifierExists ast 
         let nParams = numBoundVars + 1
         let col = if isExists then Exists else Forall
-        let (n, _) = colToInt col (colorbk g)
-        let endpts = map (+ ch) [0..nParams - 1]
-        let g' = g { numVerts = numVerts g + nParams
-                   , numEdges = numEdges g + nParams
-                   , startEdge = (numEdges g):(startEdge g)
-                   , outDeg = nParams:outDeg g
-                   , endpt = endpts ++ endpt g
-                   , color = updateColor n id (color g) }
+        let (n, _) = colToInt col (colorbk g')
+        let g'' = g' { numEdges = numEdges g' + nParams
+                     , outDeg = M.insert id nParams (outDeg g')
+                     , color = updateColor n id (color g') }
         let args = zipWith (\a i -> (a, Arg i)) boundVars [2..]
-        bodyStr <- astToString body
-        handle (ch, body, numVerts g', Arg 1) ((ch + 1, args):siblings) g'
+        foldlM (\gr (arg, atag) -> handle (arg, atag) id gr) g'' ((body, Arg 1):args)
       Z3_VAR_AST       -> do
         str <- astToString ast
-        let (n, bk) = colToInt (Var (tag, str)) (colorbk g)
-        let g' = g { startEdge = 0:(startEdge g)
-                   , outDeg = 0:outDeg g
-                   , color = updateColor n id (color g)
-                   , colorbk = bk }
-        case pop siblings of
-          (id',(sib, t):sibs):sibs' -> handle (id', sib, numVerts g', t) ((id' + 1, sibs):sibs') g'
-          _ -> return g'
+        let (n, bk) = colToInt (Var (tag, str)) (colorbk g')
+        let g'' = g' { outDeg = M.insert id 0 (outDeg g')
+                     , color = updateColor n id (color g')
+                     , colorbk = bk }
+        return g''
       _                 -> do
         astStr <- astToString ast
         error ("unexpected AST: " ++ astStr)
