@@ -74,12 +74,12 @@ analyser_debug stmts = do
  postStr <- lift $ astToString _post
  case stmts of
   [] -> do 
-   let k = T.trace (_triple preStr "end" postStr) $ unsafePerformIO $ getChar
-   k `seq` analyse stmts
+   let k = T.trace (_triple preStr "end" postStr)
+   k $ analyse stmts
   ((pid,Block []):rest) -> analyser_debug rest
   ((pid,Block (bstmt:r1)):rest) -> do
-   let k = T.trace (_triple preStr (prettyPrint bstmt) postStr) $ unsafePerformIO $ getChar
-   k `seq` analyse stmts
+   let k = T.trace (_triple preStr (prettyPrint bstmt) postStr)
+   k $ analyse stmts
 
 analyse :: [(Int,Block)] -> EnvOp (Result,Maybe Model)   
 analyse stmts = do
@@ -270,8 +270,7 @@ applyFusion list = do
  (checkInv,_) <- lift $ local $ helper _axioms _pre inv
  invStr <- lift $ astToString inv
  preStr <- lift $ astToString _pre
- let k = T.trace ("\nPrecondition:\n"++ preStr ++ "\nInvariant:\n" ++ invStr) $ unsafePerformIO $ getChar
- case k `seq` checkInv of
+ case checkInv of
   Unsat -> do
    -- the new precondition inside the loop
    condsAsts <- lift $ mapM (processExp (_objSort,_params,_res,_fields,_ssamap)) conds 

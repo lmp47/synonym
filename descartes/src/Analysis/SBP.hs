@@ -3,7 +3,7 @@
 -- Module    :  Analysis.Consolidation
 -- Copyright :  (c) 2015 Marcelo Sousa
 -------------------------------------------------------------------------------
-module Analysis.LockstepAS where
+module Analysis.SBP where
 
 import Analysis.Axioms
 import Analysis.Engine
@@ -40,8 +40,8 @@ data Composition = Composition { rest  :: [(Int, Block)]
 
 --
 
-verifyLsAs :: Bool -> ClassMap -> [Comparator] -> Prop -> Z3 (Result,Maybe String)
-verifyLsAs opt classMap _comps prop = do
+verifySBP :: Bool -> ClassMap -> [Comparator] -> Prop -> Z3 (Result,Maybe String)
+verifySBP opt classMap _comps prop = do
  let comps = map rewrite _comps
      -- a = unsafePerformIO $ mapM_ (\(Comp _ f) -> putStrLn $ prettyPrint f) comps
  (objSort, pars, res, fields, gpidmap, idmap) <- prelude classMap comps
@@ -126,8 +126,16 @@ analyse_conditionals conds = do
   env@Env{..} <- get
   tuples <- mapM convert conds
   let choices = map (\(x, _, _) -> x) tuples
+  -- check that ctrl flow matches, and if it does, try to find symmetries
+  let ctrl = map (\pid -> safeLookup "check ctrl" pid _ctrlmap) [0..(length conds) - 1]
+  preSBP <- if and $ map (== head ctrl) (tail ctrl)
+            then do
+                 let pidCondMap = foldl (\m (x, (pid, _), _) -> M.insert pid x m) M.empty tuples
+                 sbp <- getSBP pidCondMap
+                 lift $ mkAnd [_pre, sbp]
+            else return _pre
   choice <- lift $ mkOr choices
-  decisions <- lift $ allSAT _pre choices
+  decisions <- lift $ allSAT preSBP choices
   let decisions' = map (\(ast, bools) -> (ast, zipWith (\b (_, th, el) -> if b then th else el) bools tuples)) decisions
   combine env decisions tuples
  where

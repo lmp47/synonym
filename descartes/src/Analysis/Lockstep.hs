@@ -49,7 +49,7 @@ verifyLs opt classMap _comps prop = do
  let iCtrlMap = foldl (\m k -> M.insert k [] m) M.empty [0..length(comps) - 1]
 -- let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post opt False False 0
  -- set debug and fuse
- let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post opt True False 0 M.empty idmap gpidmap iCtrlMap
+ let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post opt False True 0 M.empty idmap gpidmap iCtrlMap
  ((res, mmodel),_) <- runStateT (analyser (Composition blocks [] [])) iEnv
  case res of 
   Unsat -> return (Unsat, Nothing)
@@ -83,12 +83,12 @@ analyser_debug stmts = do
  postStr <- lift $ astToString _post
  case rest stmts of
   [] -> do 
-   let k = T.trace (_triple preStr "end" postStr) $ unsafePerformIO $ getChar
-   k `seq` analyse stmts
+   let k = T.trace (_triple preStr "end" postStr)
+   k $ analyse stmts
   ((pid,Block []):rest) -> analyser_debug (Composition rest [] [])
   ((pid,Block (bstmt:r1)):rest) -> do
-   let k = T.trace (_triple preStr (prettyPrint bstmt) postStr) $ unsafePerformIO $ getChar
-   k `seq` analyse stmts
+   let k = T.trace (_triple preStr (prettyPrint bstmt) postStr)
+   k $ analyse stmts
 
 
 analyse :: Composition -> EnvOp (Result,Maybe Model)   
@@ -261,23 +261,23 @@ _analyse_loop pid _cond _body inv = do
  invStr  <- lift $ astToString inv
  env@Env{..} <- get
  (checkPre,_) <- lift $ local $ helper _axioms _pre inv
- case T.trace "checkPre" checkPre of
+ case checkPre of
   Unsat -> do
    condAst <- lift $ processExp (_objSort,_params,_res,_fields,_ssamap) _cond
    ncondAst <- lift $ mkNot condAst
    (checkInv,_) <- lift $ mkAnd [inv,ncondAst] >>= \npre -> local $ helper _axioms npre inv
-   case T.trace "checkInv" checkInv of
+   case checkInv of
     Unsat -> do
      pre <- lift $ mkAnd [inv,condAst]
      let s = [(pid, Block [BlockStmt _body])]
      updatePre pre
      updatePost inv
      (bodyCheck,m) <- analyser (Composition s [] [])
-     case T.trace "bodyCheck" bodyCheck of
-      Unsat -> T.trace "body succeeded" $ return True
+     case bodyCheck of
+      Unsat -> return True
       Sat -> do
        put env
-       T.trace "failed body " $ return  False -- {inv && cond} body {inv} failed
+       return False -- {inv && cond} body {inv} failed
     Sat -> return False -- inv && not_cond =/=> inv
   Sat -> return False -- pre =/=> inv
 
@@ -305,8 +305,7 @@ applyFusion list = do
  (checkInv,_) <- lift $ local $ helper _axioms _pre inv
  invStr <- lift $ astToString inv
  preStr <- lift $ astToString _pre
- let k = T.trace ("\nPrecondition:\n"++ preStr ++ "\nInvariant:\n" ++ invStr) $ unsafePerformIO $ getChar
- case k `seq` checkInv of
+ case checkInv of
   Unsat -> do
    -- the new precondition inside the loop
    condsAsts <- lift $ mapM (processExp (_objSort,_params,_res,_fields,_ssamap)) conds
