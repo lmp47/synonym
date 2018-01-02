@@ -80,7 +80,7 @@ getSymmetries = do
   let g = fromPreGraph pgr
   symm <- liftIO $ getSymm (nv g) (nde g) (v g) (d g) (e g) (lab g) (ptn g)
   let symm' = map (filter (\(x, y) -> x /= y) . zip [0..length pids - 1]) (perms symm)
-  T.trace ("symm: " ++ (show $ perms symm)) $ return (filter (/= []) symm')
+  return (filter (/= []) symm')
 
 getSBP :: Map Int AST -> EnvOp AST
 getSBP m = do
@@ -266,7 +266,7 @@ makePreGraph pre post pids idmap pidmap = do
           handle (ast, N) (numVerts g) g'
   handle :: (AST, Tag) -> Int -> PreGraph -> Z3 PreGraph
   handle (ast, tag) parent g = do
-    let id = T.trace (show g) $ numVerts g
+    let id = numVerts g
     let g' = g { numVerts = numVerts g + 1
                , edges = case M.lookup parent (edges g) of
                            Nothing -> M.insert parent [id] (edges g)
@@ -330,7 +330,8 @@ makePreGraph pre post pids idmap pidmap = do
             case col of
               Not ->
                 let (n, _) = colToInt Not (colorbk g') in
-                let g'' = g' { outDeg = M.insert id 0 (outDeg g')
+                let g'' = g' { numEdges = numEdges g' + 1
+                             , outDeg = M.insert id 1 (outDeg g')
                              , color = updateColor n id (color g')} in
                 handle (head args, N) id g''
               _ ->
