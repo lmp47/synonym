@@ -85,7 +85,7 @@ analyser_debug stmts = do
   [] -> do 
    let k = T.trace (_triple preStr "end" postStr)
    k $ analyse stmts
-  ((pid,Block []):rest) -> analyser_debug (Composition rest [] [])
+  ((pid,Block []):rest) -> analyser_debug (Composition rest (loops stmts) (conds stmts))
   ((pid,Block (bstmt:r1)):rest) -> do
    let k = T.trace (_triple preStr (prettyPrint bstmt) postStr)
    k $ analyse stmts
