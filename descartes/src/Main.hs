@@ -14,6 +14,8 @@ import Analysis.Util
 import Analysis.Lockstep
 import Analysis.LockstepAS
 import Analysis.SBP
+import Analysis.LockstepAS_LoC
+import Analysis.SBP_LoC
 import Analysis.Symmetry
 import NautyTraces.NautyTraces
 import Data.Maybe
@@ -138,6 +140,8 @@ descartes mode classMap comparator prop propName = do
     5 -> evalZ3 $ verifyLs False classMap comparator prop
     6 -> evalZ3 $ verifyLsAs True classMap comparator prop
     7 -> evalZ3 $ verifySBP True classMap comparator prop
+    8 -> evalZ3 $ verifyLsAs_LoC True classMap comparator prop
+    9 -> evalZ3 $ verifySBP_LoC True classMap comparator prop
   case vals of
     Unsat -> putStrLn $ "Unsat: OBEYS " ++ propName
     Sat -> do
