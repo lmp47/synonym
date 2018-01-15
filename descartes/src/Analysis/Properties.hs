@@ -27,15 +27,18 @@ prop7 (args, [res1, res2], fields) = do
   pos <- mkLt res1 res2
   return (pre, pos)
 
-prop8 :: Prop
-prop8 (args, [res1, res2], fields) = do
-  let o1 = safeLookup "det" (Ident "o1") args
-      o2 = safeLookup "det" (Ident "o2") args
-  -- o1 = o2
-  pre <- mkEq o1 o2
-  -- fn(o1) = fn(o2)
-  pos <- mkEq res1 res2
-  return (pre, pos)
+-- [Misc] Commutativity
+prop8 :: Prop 
+prop8 (args, [res1,res2], fields) = do
+    let o11 = safeLookup "symm" (Ident "o11") args
+        o12 = safeLookup "symm" (Ident "o12") args
+        o21 = safeLookup "symm" (Ident "o21") args
+        o22 = safeLookup "symm" (Ident "o22") args
+    eq1 <- mkEq o11 o22
+    eq2 <- mkEq o21 o12
+    pre <- mkAnd [eq1,eq2]
+    pos <- mkEq res1 res2
+    return (pre, pos)
 
 prop9 :: Prop
 prop9 (args, [res1, res2, res3, res4], fields) = do
@@ -56,17 +59,75 @@ prop9 (args, [res1, res2, res3, res4], fields) = do
   return (pre, pos)
 
 prop10 :: Prop
-prop10 (args, [res1, res2], fields) = do
-  let o1 = safeLookup "monotone" (Ident "o1") args
-      o2 = safeLookup "monotone" (Ident "o2") args
-      fn = safeLookup "processName: Field"  (Ident "x") fields
-  o1app <- mkApp fn [o1]
-  o2app <- mkApp fn [o2]
-  -- o1.x < o2.x
-  pre <- mkLt o1app o2app
+prop10 (args, [res1, res2, res3, res4], fields) = do
+  let o11 = safeLookup "monotone" (Ident "o11") args
+      o12 = safeLookup "monotone" (Ident "o12") args
+      o21 = safeLookup "monotone" (Ident "o21") args
+      o22 = safeLookup "monotone" (Ident "o22") args
+      fn = safeLookup "processName: Field"  (Ident "in") fields
+  o11app <- mkApp fn [o11]
+  o12app <- mkApp fn [o12]
+  o21app <- mkApp fn [o21]
+  o22app <- mkApp fn [o22]
+  -- o11.in = o12.in
+  eq <- mkEq o11app o12app
+  lt <- mkLt o21app o22app
+  pre <- mkAnd [eq, lt]
   -- fn(o1) < fn(o2)
   pos <- mkLt res1 res2
   return (pre, pos)
+
+prop11 :: Prop
+prop11 (args, [res1, res2, res3, res4], fields) = do
+  let o11 = safeLookup "assoc" (Ident "o11") args
+      o12 = safeLookup "assoc" (Ident "o12") args
+      o13 = safeLookup "assoc" (Ident "o13") args
+      o14 = safeLookup "assoc" (Ident "o14") args
+      o21 = safeLookup "assoc" (Ident "o21") args
+      o22 = safeLookup "assoc" (Ident "o22") args
+      o23 = safeLookup "assoc" (Ident "o23") args
+      o24 = safeLookup "assoc" (Ident "o24") args
+  -- res1 = f(x1, x2) and res2 = f(x2, x3) and
+  -- res3 = f(res1, x3) and res4 = f(x1, res2) and
+  -- res3 = res4
+  eqx1 <- mkEq o11 o14
+  eqx2 <- mkEq o21 o12
+  eqx3 <- mkEq o23 o22
+  eqres1 <- mkEq res1 o13
+  eqres2 <- mkEq res2 o24
+  pre <- mkAnd [eqx1, eqx2, eqx3, eqres1, eqres2]
+  pos <- mkEq res3 res4
+  return (pre, pos)
+
+prop12 :: Prop
+prop12 (args, [res1, res2], fields) = do
+    let o11 = safeLookup "perm" (Ident "o11") args
+        o12 = safeLookup "perm" (Ident "o12") args
+        o21 = safeLookup "perm" (Ident "o21") args
+        o22 = safeLookup "perm" (Ident "o22") args
+        o31 = safeLookup "perm" (Ident "o31") args
+        o32 = safeLookup "perm" (Ident "o32") args
+    eq1 <- mkEq o11 o22
+    eq2 <- mkEq o21 o32
+    eq3 <- mkEq o31 o12
+    pre <- mkAnd [eq1, eq2, eq3]
+    pos <- mkEq res1 res2
+    return (pre, pos)
+    
+prop13 :: Prop
+prop13 (args, [res1, res2], fields) = do
+    let o11 = safeLookup "swap" (Ident "o11") args
+        o12 = safeLookup "swap" (Ident "o12") args
+        o21 = safeLookup "swap" (Ident "o21") args
+        o22 = safeLookup "swap" (Ident "o22") args
+        o31 = safeLookup "swap" (Ident "o31") args
+        o32 = safeLookup "swap" (Ident "o32") args
+    eq1 <- mkEq o11 o22
+    eq2 <- mkEq o21 o12
+    eq3 <- mkEq o31 o32
+    pre <- mkAnd [eq1, eq2, eq3]
+    pos <- mkEq res1 res2
+    return (pre, pos)
 --
 
 prop1 :: Prop
@@ -87,8 +148,13 @@ prop1 (args, [res1,res2], fields) = do
     r1gt <- mkGt res1 i0
     r2lt <- mkLt res2 i0
     posas <- mkIff r1gt r2lt
+{-
+    r1lt <- mkLt res1 i0
+    r2gt <- mkGt res2 i0
+    posas' <- mkIff r2gt r1lt
+-}
     pos <- mkAnd [poseq,posas]
-    return (pre, pos)
+    return (pre, poseq)
 
 -- transitivity
 prop2 :: Prop

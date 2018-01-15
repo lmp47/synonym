@@ -77,6 +77,9 @@ arity 7 = 2
 arity 8 = 2
 arity 9 = 4
 arity 10 = 2
+arity 11 = 4
+arity 12 = 2
+arity 13 = 2
 
 toProp :: Int -> Prop
 toProp 1 = prop1
@@ -89,6 +92,9 @@ toProp 7 = prop7
 toProp 8 = prop8
 toProp 9 = prop9
 toProp 10 = prop10
+toProp 11 = prop11
+toProp 12 = prop12
+toProp 13 = prop13
 
 showProp :: Int -> String
 showProp 1 = "[Anti-symmetry] (compare): forall x and y, sgn(compare(x,y)) == −sgn(compare(y,x))"
@@ -102,9 +108,12 @@ showProp 5 = "[Symmetry] (equals): for any non-null reference values x and y,"
 showProp 6 = "[Consistency] (equals): for any non-null reference values x and y,"
           ++ " multiple invocations of x.equals(y) consistently return true or consistently return false."
 showProp 7 = "[False] (misc): for all x and y, if x = y then f(x) < f(y)."
-showProp 8 = "[Determinism] (misc): for all x and y, if x = y then f(x) = f(y)."
+showProp 8 = "[Commutativity] (misc): for all x and y, f(x,y) = f(y,x)."
 showProp 9 = "[Symmetry Test] (misc): for all w, x, y, z, if w = x and y = z then f(w) = f(x) and f(y) = f(z)."
-showProp 10 = "[Monotonicity] (misc): for all obj1 and obj2, if obj1.x < obj2.x then f(obj1) < f(obj2)."
+showProp 10 = "[Monotonicity] (misc): for all obj1, obj2, obj3, if obj2.in < obj3.in then f(obj1, obj2) < f(obj1, obj3)."
+showProp 11 = "[Associativity] (misc): for all x, y, z, f(f(x,y),z) = f(x,f(y,z))"
+showProp 12 = "[Permutation] (misc): for all x, y, z, f(x,y,z) = f(z,x,y)"
+showProp 13 = "[Swap] (misc): for all x, y, z, f(x,y,z) = f(y,x,z)"
   
 front_end :: FilePath -> IO ()
 front_end file = do

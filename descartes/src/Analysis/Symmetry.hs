@@ -14,12 +14,14 @@ import Data.Foldable
 
 import Analysis.Types
 import Analysis.Util
+import Analysis.Engine
 import NautyTraces.NautyTraces
 
 import Z3.Monad hiding (Params)
 
 import qualified Debug.Trace as T
 import qualified Data.Map as M
+import Data.List
 --
 -- TODO: clean & fix
 
@@ -85,27 +87,28 @@ getSymmetries = do
 getSBP :: Map Int AST -> EnvOp AST
 getSBP m = do
   -- remove "last" part of cycle to eliminate redundancy
-  symms <- getSymmetries
-  pps <- lift $ mapM (getPP m) symms
+  symms <- getSymmetriesZ3
+  pps <- T.trace (show symms) $ lift $ mapM (getPP m) symms
   res <- lift $ mkAnd (concat pps)
-  return res
+  sbpStr <- lift $ astToString res
+  T.trace ("sbp: " ++ sbpStr) $ return res
 
 getPP :: Map Int AST -> [(Int, Int)] -> Z3 [AST]
 getPP m symm = do
   let symm' = filter (\(x,y) -> M.lookup x m /= Nothing && M.lookup y m /= Nothing) symm
   -- make gs
   lgs <- mapM (\(x,y) -> do
-                         let x' = safeLookup "getPP" x m
-                             y' = safeLookup "getPP" y m
+                         let x' = safeLookup ("getPP: " ++ show x) x m
+                             y' = safeLookup ("getPP: " ++ show y) y m
                          le <- mkImplies x' y'
                          ge <- mkImplies y' x'
-                         return (le, ge)) symm
+                         return (le, ge)) symm'
   case lgs of
     (lg:lgs) -> do
                 p <- mkFreshBoolVar "p"
                 acc <- mkAnd [fst lg, p]
                 chain p lg lgs [acc]
-    _ -> error "getPP: empty perm"  
+    _ -> return []
  where
  chain :: AST -> (AST,AST) -> [(AST, AST)] -> [AST] -> Z3 [AST]
  chain _ _ [] acc = return acc
@@ -129,6 +132,88 @@ data PreGraph = PreGraph
   , color :: Map Int [Int] -- color int to vertex int
   , colorbk :: ColInt -- color label and int bookkeeping
   } deriving Show
+
+getSymmetriesZ3 :: EnvOp [[(Int,Int)]]
+getSymmetriesZ3 = do
+  env@Env{..} <- get
+  let pids = M.keys _ctrlmap
+  let (def:perms) = genPerms pids
+  (m, defAST) <- permuteAST def (M.empty, _pre)
+  perms' <- getSymmASTZ3 defAST (m, _pre) perms
+  (m', defAST') <- permuteAST def (M.empty, _post)
+  permres <- getSymmASTZ3 defAST' (m', _post) perms'
+  return $ map (M.toList) permres
+
+getSymmASTZ3 :: AST -> (Map (String, Int) AST, AST) -> [Map Int Int] -> EnvOp [Map Int Int]
+getSymmASTZ3 defAST mast perms =
+  filterM (checkIff defAST mast) perms
+  
+checkIff :: AST -> (Map (String, Int) AST, AST) -> Map Int Int -> EnvOp Bool
+checkIff defAST mast perm = do
+  (_, pAST) <- permuteAST perm mast
+  iff <- lift $ mkIff defAST pAST
+  niff <- lift $ mkNot iff
+  res <- lift $ checkSAT niff
+  case res of
+    Unsat -> return True
+    Sat -> return False
+
+genPerms :: [Int] -> [Map Int Int]
+genPerms pids =
+  let (h:t) = permutations pids in
+  map (M.fromList . zip h) (h:t)
+  
+permuteAST :: Map Int Int -> (Map (String, Int) AST, AST) -> EnvOp (Map (String, Int) AST, AST)
+permuteAST perm (m, ast) = do
+    kind <- lift $ getAstKind ast
+    env@Env{..} <- get
+    case kind of
+      Z3_NUMERAL_AST    -> return (m, ast)
+      Z3_APP_AST        -> do
+        app <- lift $ toApp ast
+        fn <- lift $ getAppDecl app
+        nParams <- lift $ getAppNumArgs app
+        args <- lift $ mapM (\i -> getAppArg app i) [0..(nParams-1)]
+        if nParams == 0
+        then do -- constant
+             (str, pid) <- lift $ sepPid ast _idmap (M.union _pidmap _gpidmap)
+             case pid of
+               Just pid' -> do
+                       sort <- lift $ getSort ast
+                       case M.lookup pid' perm of
+                         Just pid'' -> case M.lookup (str, pid'') m of
+                                         Just v -> return (m, v)
+                                         _ -> do
+                                              v <- lift $ mkFreshConst (str ++ (show pid'')) sort
+                                              return (M.insert (str, pid'') v m, v)
+                         _ -> error "permuteAST: pid doesn't map to anything"
+               _ -> return (m, ast)
+        else do -- function application
+             (m', args') <- foldrM (\arg (m,margs') -> do
+                                                       (m', arg') <- permuteAST perm (m, arg)
+                                                       return (m', arg':margs')) (m, []) args
+             app <- lift $ mkApp fn args'
+             return (m', app)
+      Z3_QUANTIFIER_AST -> do
+        numBoundVars <- lift $ getQuantifierNumBound ast 
+        boundVars <- lift $ getQuantifierBoundVars ast 
+        apps <- lift $ mapM (\i -> toApp i) boundVars
+        body <- lift $ getQuantifierBody ast 
+        (m', body') <- permuteAST perm (m, body)
+        isExists <- lift $ isQuantifierExists ast 
+        if (isExists)
+        then do
+             ast' <- lift $ mkExistsConst [] apps body'
+             return (m', ast')
+        else do
+             ast' <-  lift $ mkForallConst [] apps body'
+             return (m', ast')
+      Z3_VAR_AST       -> return (m, ast)
+      _                 -> do
+        astStr <- lift $ astToString ast
+        error ("unexpected AST: " ++ astStr)
+
+  
 
 data Tag = N
          | Arg Int deriving (Eq, Ord)
