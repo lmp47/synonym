@@ -52,8 +52,8 @@ verifySBP_LoC opt classMap _comps prop = do
  let iCtrlMap = foldl (\m k -> M.insert k [] m) M.empty [0..length(comps) - 1]
 -- let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post opt False False 0
  -- set debug and fuse
- let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post opt True True 0 M.empty idmap gpidmap iCtrlMap
- ((res, mmodel),_) <- runStateT (analyser (Composition blocks [] [])) iEnv
+ let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post opt True True 0 M.empty idmap gpidmap iCtrlMap []
+ ((res, mmodel),_) <- runStateT (preAnalyser (Composition blocks [] [])) iEnv
  case res of 
   Unsat -> return (Unsat, Nothing)
   Sat -> do
@@ -70,6 +70,11 @@ _triple pre stm post =
   ,stm
   ,post
   ,"-----------------"]
+
+preAnalyser :: Composition -> EnvOp (Result,Maybe Model)
+preAnalyser stmts = do
+  getInitialPerms
+  analyser stmts
 
 -- @ Analyser main function
 analyser :: Composition -> EnvOp (Result,Maybe Model)

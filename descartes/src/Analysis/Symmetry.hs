@@ -133,11 +133,22 @@ data PreGraph = PreGraph
   , colorbk :: ColInt -- color label and int bookkeeping
   } deriving Show
 
+getInitialPerms :: EnvOp ()
+getInitialPerms = do
+  env@Env{..} <- get
+  let pids = M.keys _ctrlmap
+  let (def:perms) = genPerms pids
+  (m, defAST) <- permuteAST def (M.empty, _pre)
+  perms' <- getSymmASTZ3 defAST (m, _pre) perms
+  (m', defAST') <- permuteAST def (M.empty, _post)
+  permres <- getSymmASTZ3 defAST' (m', _post) perms'
+  put env{ _perms = (def:permres) }
+
 getSymmetriesZ3 :: EnvOp [[(Int,Int)]]
 getSymmetriesZ3 = do
   env@Env{..} <- get
   let pids = M.keys _ctrlmap
-  let (def:perms) = genPerms pids
+  let (def:perms) = _perms
   (m, defAST) <- permuteAST def (M.empty, _pre)
   perms' <- getSymmASTZ3 defAST (m, _pre) perms
   (m', defAST') <- permuteAST def (M.empty, _post)

@@ -58,6 +58,7 @@ data Env = Env
   , _idmap   :: IdMap
   , _gpidmap :: PidMap --pid map for I/O
   , _ctrlmap :: CtrlMap
+  , _perms   :: [Map Int Int]
   }
 
 type EnvOp a = StateT Env Z3 a

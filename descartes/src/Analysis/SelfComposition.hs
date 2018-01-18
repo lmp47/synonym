@@ -42,7 +42,7 @@ verifyWithSelf classMap comps prop = do
   let blocks = zip [0..] $ getBlocks comps
   iSSAMap <- getInitialSSAMap
   let iCtrlMap = foldl (\m k -> M.insert k [] m) M.empty [0..length(comps) - 1]
-  let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post False False False 0 M.empty idmap gpidmap iCtrlMap
+  let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post False False False 0 M.empty idmap gpidmap iCtrlMap []
   _pres <- mapM (\p -> evalStateT (selfcomposition p) iEnv) blocks
   let pres = snd $ unzip _pres
 --  pres <- mapM (selfcomposition (objSort, pars, res, fields', iSSAMap, axioms, pre)) blocks

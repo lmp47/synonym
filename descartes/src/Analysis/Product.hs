@@ -37,7 +37,7 @@ verifyWithProduct classMap _comps prop = do
  let blocks = zip [0..] $ getBlocks comps
  iSSAMap <- getInitialSSAMap
  let iCtrlMap = foldl (\m k -> M.insert k [] m) M.empty [0..length(comps) - 1]
- let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post False False False 0 M.empty idmap gpidmap iCtrlMap
+ let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post False False False 0 M.empty idmap gpidmap iCtrlMap []
  ((res, mmodel),_) <- runStateT (analyser blocks) iEnv
  case res of 
   Unsat -> return (Unsat, Nothing)
