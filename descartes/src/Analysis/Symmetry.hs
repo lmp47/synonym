@@ -88,10 +88,10 @@ getSBP :: Map Int AST -> EnvOp AST
 getSBP m = do
   -- remove "last" part of cycle to eliminate redundancy
   symms <- getSymmetriesZ3
-  pps <- T.trace (show symms) $ lift $ mapM (getPP m) symms
+  pps <- lift $ mapM (getPP m) symms
   res <- lift $ mkAnd (concat pps)
   sbpStr <- lift $ astToString res
-  T.trace ("sbp: " ++ sbpStr) $ return res
+  return res
 
 getPP :: Map Int AST -> [(Int, Int)] -> Z3 [AST]
 getPP m symm = do
@@ -147,13 +147,15 @@ getInitialPerms = do
 getSymmetriesZ3 :: EnvOp [[(Int,Int)]]
 getSymmetriesZ3 = do
   env@Env{..} <- get
-  let pids = M.keys _ctrlmap
   let (def:perms) = _perms
-  (m, defAST) <- permuteAST def (M.empty, _pre)
-  perms' <- getSymmASTZ3 defAST (m, _pre) perms
-  (m', defAST') <- permuteAST def (M.empty, _post)
-  permres <- getSymmASTZ3 defAST' (m', _post) perms'
-  return $ map (M.toList) permres
+  if perms == []
+  then return []
+  else do
+    (m, defAST) <- permuteAST def (M.empty, _pre)
+    perms' <- getSymmASTZ3 defAST (m, _pre) perms
+    (m', defAST') <- permuteAST def (M.empty, _post)
+    permres <- getSymmASTZ3 defAST' (m', _post) perms'
+    return $ map (M.toList) permres
 
 getSymmASTZ3 :: AST -> (Map (String, Int) AST, AST) -> [Map Int Int] -> EnvOp [Map Int Int]
 getSymmASTZ3 defAST mast perms =
