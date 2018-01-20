@@ -80,6 +80,7 @@ arity 10 = 2
 arity 11 = 4
 arity 12 = 2
 arity 13 = 2
+arity 14 = 4
 
 toProp :: Int -> Prop
 toProp 1 = prop1
@@ -95,6 +96,7 @@ toProp 10 = prop10
 toProp 11 = prop11
 toProp 12 = prop12
 toProp 13 = prop13
+toProp 14 = prop14
 
 showProp :: Int -> String
 showProp 1 = "[Anti-symmetry] (compare): forall x and y, sgn(compare(x,y)) == −sgn(compare(y,x))"
@@ -112,8 +114,9 @@ showProp 8 = "[Commutativity] (misc): for all x and y, f(x,y) = f(y,x)."
 showProp 9 = "[Symmetry Test] (misc): for all w, x, y, z, if w = x and y = z then f(w) = f(x) and f(y) = f(z)."
 showProp 10 = "[Monotonicity] (misc): for all obj1, obj2, obj3, if obj2.in < obj3.in then f(obj1, obj2) < f(obj1, obj3)."
 showProp 11 = "[Associativity] (misc): for all x, y, z, f(f(x,y),z) = f(x,f(y,z))"
-showProp 12 = "[Permutation] (misc): for all x, y, z, f(x,y,z) = f(z,x,y)"
+showProp 12 = "[Cycle] (misc): for all x, y, z, f(x,y,z) = f(z,x,y)"
 showProp 13 = "[Swap] (misc): for all x, y, z, f(x,y,z) = f(y,x,z)"
+showProp 14 = "[Permutation] (misc): for all x, y, z, f(x,y,z) = f(y,x,z) and for all x, y, z, f(x,y,z) = f(z,y,x)"
   
 front_end :: FilePath -> IO ()
 front_end file = do

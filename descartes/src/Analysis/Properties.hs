@@ -128,6 +128,32 @@ prop13 (args, [res1, res2], fields) = do
     pre <- mkAnd [eq1, eq2, eq3]
     pos <- mkEq res1 res2
     return (pre, pos)
+
+prop14 :: Prop
+prop14 (args, [res1, res2, res3, res4], fields) = do
+    let o11 = safeLookup "swap" (Ident "o11") args
+        o12 = safeLookup "swap" (Ident "o12") args
+        o13 = safeLookup "swap" (Ident "o13") args
+        o14 = safeLookup "swap" (Ident "o14") args
+        o21 = safeLookup "swap" (Ident "o21") args
+        o22 = safeLookup "swap" (Ident "o22") args
+        o23 = safeLookup "swap" (Ident "o23") args
+        o24 = safeLookup "swap" (Ident "o24") args
+        o31 = safeLookup "swap" (Ident "o31") args
+        o32 = safeLookup "swap" (Ident "o32") args
+        o33 = safeLookup "swap" (Ident "o33") args
+        o34 = safeLookup "swap" (Ident "o34") args
+    eq1 <- mkEq o11 o22
+    eq2 <- mkEq o21 o12
+    eq3 <- mkEq o31 o32
+    eq4 <- mkEq o13 o34
+    eq5 <- mkEq o23 o24
+    eq6 <- mkEq o33 o14
+    pre <- mkAnd [eq1, eq2, eq3, eq4, eq5, eq6]
+    pos1 <- mkEq res1 res2
+    pos2 <- mkEq res3 res4
+    pos <- mkAnd [pos1, pos2]
+    return (pre, pos)
 --
 
 prop1 :: Prop
