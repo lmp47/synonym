@@ -54,49 +54,8 @@ public class Chromosome implements Comparator<Chromosome>{
             return o3.id;
           i++;
       }
-      i = 0;
-      while(i < 5){
-          if (Double.compare(o1.getScore(i), o2.getScore(i)) > 0)
-            break;
-          i++;
-      }
-      if (i < 5) {
-        int j = 0;
-        while(j < i){
-            if (Double.compare(o1.getScore(i), o3.getScore(i)) > 0)
-              return o1.id;
-            if (Double.compare(o1.getScore(i), o3.getScore(i)) < 0)
-              return o3.id;
-            j++;
-        }
-        return o1.min13;
-      }
-      i = 0;
-      while(i < 5){
-          if (Double.compare(o1.getScore(i), o2.getScore(i)) < 0)
-            break;
-          i++;
-      }
-      if (i < 5) {
-        int j = 0;
-        while(j < i){
-            if (Double.compare(o2.getScore(i), o3.getScore(i)) > 0)
-              return o2.id;
-            if (Double.compare(o2.getScore(i), o3.getScore(i)) < 0)
-              return o3.id;
-            j++;
-        }
-        return o1.min23;
-      }
-      i = 0;
-      while(i < 5){
-          if (Double.compare(o1.getScore(i), o3.getScore(i)) > 0)
-            return o1.min12;
-          if (Double.compare(o1.getScore(i), o3.getScore(i)) < 0)
-            return o3.id;
-          i++;
-      }
-      return o1.min123;
+
+      return o1.min12;
 
       return 0;
   }
