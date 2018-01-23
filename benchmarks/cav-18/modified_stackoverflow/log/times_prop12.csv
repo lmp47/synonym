@@ -1,0 +1,17 @@
+File, Mode 0, Mode 6, Mode 7, Mode 8, Mode 9
+ArrayInt-pick3-false-simple.java, 2.20, 0.17, 0.17, 0.17, 0.17
+ArrayInt-pick3-false.java, 1.97, 0.21, 0.23, 0.23, 0.22
+ArrayInt-pick3-true-simple.java, 2.14, 1.49, 1.48, 1.47, 1.46
+ArrayInt-pick3-true.java, 1.95, 1.50, 1.50, 1.49, 1.53
+Chromosome-pick3-false-simple.java, 1.16, 0.21, 0.20, 0.21, 0.21
+Chromosome-pick3-false.java, 3.59, 0.66, 0.67, 0.67, 0.68
+Chromosome-pick3-true-simple.java, 1.13, 1.12, 1.14, 1.11, 1.14
+Chromosome-pick3-true.java, 3.48, 3.85, 3.85, 3.88, 3.85
+PokerHand-pick3-false-part1.java, 7.00, 1.32, 1.32, 0.69, 0.71
+PokerHand-pick3-false-part2.java, 11.68, 0.97, 0.96, 0.99, 0.93
+PokerHand-pick3-false.java, 20.49, 1.17, 1.15, 1.09, 1.07
+PokerHand-pick3-true-part1.java, 6.95, 8.49, 8.54, 4.85, 4.82
+PokerHand-pick3-true-part2.java, 11.76, 14.85, 14.95, 8.95, 8.92
+PokerHand-pick3-true.java, 20.32, 25.16, 25.19, 14.73, 14.93
+Solution-pick3-false.java, 123.36, 46.30, 46.30, 46.20, 46.34
+Solution-pick3-true.java, 79.28, 23.81, 22.49, 22.39, 22.50

@@ -13,6 +13,9 @@ public class SolutionComparator implements Comparator<SolutionComparator> {
 
     @Override
     public int compare(SolutionComparator o1, SolutionComparator o2, SolutionComparator o3) {
+        assume (o1.id != o2.id);
+        assume (o1.id != o3.id);
+        assume (o2.id != o3.id);
         if (o1.id <= o2.id) {
           assume (o1.min12 == o1.id);
         } else {
