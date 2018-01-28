@@ -12,6 +12,7 @@ import Analysis.Invariant
 import Analysis.Properties
 import Analysis.Util
 import Analysis.Types
+import Analysis.Symmetry
 
 import Control.Monad.State.Strict
 import Control.Monad.ST.Safe
@@ -27,7 +28,9 @@ import Z3.Monad
 
 import qualified Data.Char as C
 import qualified Data.Map as M
+import qualified Data.List as L
 import qualified Debug.Trace as T
+import Data.Tuple
 
 -- Move later:
 
@@ -96,10 +99,10 @@ analyse stmts = do
  env@Env{..} <- get
  case (rest stmts, loops stmts, conds stmts) of
   ([], [], []) -> lift $ local $ helper _axioms _pre _post
-  ([], [], cs) -> analyse_conditionals cs []
+  ([], [], cs) -> analyse_conditionals cs
   ([], ls, cs)  -> analyse_loops ls cs []
   ((pid,Block []):rest, ls, cs) -> analyser (Composition rest ls cs)
-  ((pid,Block (bstmt:r1)):rest, ls, cs) -> case bstmt of
+  ((pid,Block (bstmt:r1)):rest, ls, cs) -> newStmt pid >> case bstmt of
    BlockStmt stmt -> analyser_stmt stmt (pid, Block r1) rest ls cs
    LocalVars mods ty vars -> do
     sort <- lift $ processType ty    
@@ -115,15 +118,54 @@ analyse stmts = do
           case varid of
             VarId ident@(Ident str) ->
               case safeLookup "new vars" ident nssamap of
-                (ast, _, _) -> addToPidMap ast pid) vars
+                (ast, _, _) -> addToPidMap ast pid >> addToIdMap ast ident) vars
     analyser (Composition ((pid, Block r1):rest) ls cs)
 
-analyse_conditionals :: [(Int,Block)] -> [(Int,Block)] -> EnvOp (Result,Maybe Model)
-analyse_conditionals conds rest =
-  case conds of
-  (pid,Block (BlockStmt (IfThenElse cond s1 s2):r1)):cs -> analyse_conditional pid r1 cs cond s1 s2 rest
-  _ -> error "Expected IfThenElse conditional"
-
+analyse_conditionals :: [(Int,Block)] -> EnvOp (Result,Maybe Model)
+analyse_conditionals conds = do
+  env@Env{..} <- get
+  tuples <- mapM convert conds
+  let choices = map (\(x, _, _) -> x) tuples
+  choice <- lift $ mkOr choices
+  decisions <- lift $ allSAT _pre choices
+  let decisions' = map (\(ast, bools) -> (ast, zipWith (\b (_, th, el) -> if b then th else el) bools tuples)) decisions
+  combine env decisions tuples
+ where
+   analyse_branch (phi, bools) tuples = do
+    env@Env{..} <- get
+    newPre <- lift $ mkAnd [_pre, phi]
+    updatePre newPre
+    branches <- sequence $ zipWith
+                  (\b (_, (thpid, Block th), (elpid, Block el)) ->
+                    if b
+                    then chooseThen thpid (length th) >> return (thpid, Block th)
+                    else chooseElse elpid (length el) >> return (elpid, Block el))
+                  bools tuples
+    analyser (Composition branches [] [])
+   combine e [] _ = return _default
+   combine e (d:ds) tuples = do
+     put e
+     res <- analyse_branch d tuples
+     case res of
+       (Unsat,_) -> combine e ds tuples
+       _ -> return res
+   -- Convert each conditional-led program of form
+   --   (pid, Block (BlockStmt (IfThenElse cond s1 s2):r1))
+   -- to a tuple of form
+   --   (cond, pid, Block (BlockStmt (s1:r1)), Block (BlockStmt (s2:r1)))
+   convert :: (Int, Block) -> EnvOp (AST, (Int, Block), (Int, Block))
+   convert (pid, Block (BlockStmt (IfThenElse cond s1 s2):r)) = do
+     env@Env{..} <- get
+     if cond == Nondet
+     then do
+       sort <- lift $ mkBoolSort
+       cond' <- lift $ mkFreshConst "nondet" sort
+       return (cond', (pid, Block (BlockStmt s1:r)), (pid, Block (BlockStmt s2:r)))
+     else do
+       cond' <- lift $ processExp (_objSort,_params,_res,_fields,_ssamap) cond
+       return (cond', (pid, Block (BlockStmt s1:r)), (pid, Block (BlockStmt s2:r)))
+     
+-- Analyse If Then Else
 analyse_loops :: [(Int,Block)] -> [(Int,Block)] -> [(Int,Block)] -> EnvOp (Result,Maybe Model)
 analyse_loops loops cs rest =
   case loops of
@@ -133,7 +175,7 @@ analyse_loops loops cs rest =
 analyser_stmt :: Stmt -> (Int,Block) -> [(Int,Block)] -> [(Int,Block)] -> [(Int,Block)] -> EnvOp (Result,Maybe Model)
 analyser_stmt stmt (pid, Block r1) rest ls cs =
  case stmt of
-  StmtBlock (Block block) -> analyser (Composition ((pid, Block (block ++ r1)):rest) ls cs)
+  StmtBlock (Block block) -> newBlock pid (length block) >> analyser (Composition ((pid, Block (block ++ r1)):rest) ls cs)
   Assume expr -> do
    assume expr
    analyser (Composition ((pid, Block r1):rest) ls cs)
@@ -173,49 +215,6 @@ analyse_exp pid rest _exp ls cs =
    postOp _exp lhs Sub "PostDecrement"
    analyser (Composition rest ls cs)
 
--- Analyse If Then Else
-analyse_conditional :: Int -> [BlockStmt] -> [(Int,Block)] -> Exp -> Stmt -> Stmt -> [(Int,Block)] -> EnvOp (Result,Maybe Model)
-analyse_conditional pid r1 cs cond s1 s2 rest =
- if cond == Nondet
- then do
-  env@Env{..} <- get
-  resThen <- analyser (Composition ((pid, Block (BlockStmt s1:r1)):rest) [] cs)
-  put env
-  resElse <- analyser (Composition ((pid, Block (BlockStmt s2:r1)):rest) [] cs)
-  combine resThen resElse                
- else do
-  env@Env{..} <- get
-  condSmt <- lift $ processExp (_objSort,_params,_res,_fields,_ssamap) cond
-  -- then branch
-  preThen <- lift $ mkAnd [_pre, condSmt]
-  resThen <- analyse_branch preThen s1
-  -- else branch
-  put env
-  ncondSmt <- lift $ mkNot condSmt
-  preElse <- lift $ mkAnd [_pre, ncondSmt]
-  resElse <- analyse_branch preElse s2
-  combine resThen resElse
- where
-   next_cond r =
-     case cs of
-        [] -> analyser (Composition (r:rest) [] [])
-        cs -> analyse_conditionals cs (r:rest)
-   analyse_branch phi branch = do
-    env@Env{..} <- get
-    updatePre phi
-    let r = (pid, Block (BlockStmt branch:r1))
-    if _opt
-    then do
-      cPhi <- lift $ checkSAT phi
-      if cPhi == Unsat
-      then return _default
-      else next_cond r
-    else next_cond r
-   combine :: (Result, Maybe Model) -> (Result, Maybe Model) -> EnvOp (Result, Maybe Model)
-   combine (Unsat,_) (Unsat,_) = return _default
-   combine (Unsat,_) res = return res
-   combine res _ = return res
-
 -- Analyse Loops
 analyse_loop :: Int -> [BlockStmt] -> [(Int,Block)] -> Exp -> Stmt -> [(Int,Block)] -> [(Int,Block)] -> EnvOp (Result,Maybe Model)
 analyse_loop pid r1 ls _cond _body cs rest = do
@@ -245,11 +244,8 @@ analyse_loop pid r1 ls _cond _body cs rest = do
     it_res <- _analyse_loop pid _cond _body inv
     if it_res
     then do
-     cond <- lift $ processExp (_objSort,_params,_res,_fields,_ssamap) _cond
-     ncond <- lift $ mkNot cond
-     pre <- lift $ mkAnd [inv, ncond]
      put env
-     updatePre pre
+     updatePre inv
      case ls of
        [] -> analyser (Composition ((pid,Block r1):rest) ls cs)
        ls -> analyse_loops ls cs ((pid,Block r1):rest)
