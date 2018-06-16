@@ -1,65 +1,44 @@
-# descartes: verifico, ergo sum.  
-
 Overview
--------------------------------------------------
+===========
 
-descartes is a fully automated cartesian hoare prover
-for Java programs.
+Synonym contains three automated tools for proving hyperproperties:
+1. descartes - see https://github.com/marcelosousa/descartes
+2. syn - exploits synchrony
+3. synonym - exploits synchrony and symmetry
 
 Installation
 ===========
 
-Descartes is implemented in Haskell and it uses two 
-modified packages that are located in the dependencies
-directory: language-java and z3.
+Synonym is implemented as a modification of Descartes, and
+installation proceeds similarly:
 
-To install those packages, just run the command 'cabal install'
-in the root directory of the packages (they contain a .cabal file).
+First install language-java and z3 by running
+'cabal install' in dependencies/language-java-0.2.7 and
+running 'cabal install' in dependencies/z3-4.0.0.
 
 To install the main package, run 'cabal install' from the 
-descartes directory.
+synonym directory.
 
-Running Descartes
+Running Synonym
 =================
 
-Once descartes is installed, running 'descartes -h' will 
-print the help information.
+Running 'synonym --h' will print the help information.
 
-Currently, descartes receives 2 options '-p' and '-m' to 
-specify the hyperproperty to be verified and the mode 
-of execution of descartes.
+To run Synonym, you must provide options '-p' and '-m'
+and a Java file.
 
-In addition, it also receives a Java file. Note that the
-prototype was designed to verify relational operators.
+The '-p' option gives the number of the hyperproperty
+to verify, and the '-m' option gives the name of the
+tool to use to verify it (which must be one of
+descartes, syn, or synonym).
 
-Check the directory 'benchmarks/pldi-16' for examples.
+E.g. the following will have syn try to prove property 1
+on FILE.java.
+    synonym -p=1 -m=syn FILE.java
 
-Currently, one can execute descartes to verify the following
-hyperproperties related to Java comparators and equals specified 
-by the option '-p':
+The directory 'benchmarks/cav-18' contains examples on which
+the tools can be run.
 
-- '-p=1' = (compare): forall x and y, sgn(compare(x,y)) == −sgn(compare(y,x))
-
-- '-p=2' = (compare): for all x, y and z, compare(x, y) > 0 and compare/equals(y, z) > 0 implies compare/equals(x, z) > 0
-
-- '-p=3' = (compare): for all x, y and z, compare(x,y) == 0 implies that sgn(compare(x, z)) == sgn(compare(y, z))
-
-- '-p=4' = (equals): for all x, y and z, equals(x, y) and equals(y, z) implies equals(x, z)
-
-- '-p=5' = (equals): for any non-null reference values x and y, x.equals(y) should return true if and only if y.equals(x) returns true
-
-- '-p=6' = (equals): for any non-null reference values x and y, multiple invocations of x.equals(y) consistently return true or consistently return false
-
-To add new properties, check the files 'src/Analysis/Properties.hs' and the 'src/Main.hs'.
-
-There are 4 modes of execution of 'descartes' that can be specified using the option '-m':
-
-- '-m=0' = No explicit product program construction and with optimisations (havoc)
-
-- '-m=1' = No explicit product program construction without optimisations
-
-- '-m=2' = Verification using self-composition
-
-- '-m=3' = Verification using explicit product construction
-
-Check the paper for more details and the comparison between these modes. 
+To add new properties, the files 'src/Analysis/Properties.hs'
+and 'src/Main.hs' need to be modified.
+Information about the properties can be found in 'src/Main.hs'.

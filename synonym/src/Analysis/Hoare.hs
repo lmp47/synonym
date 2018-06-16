@@ -2,6 +2,7 @@
 -------------------------------------------------------------------------------
 -- Module    :  Analysis.Hoare
 -- Copyright :  (c) 2015 Marcelo Sousa
+--                  2018 Lauren Pick
 -- Implements a strong-conditional calculus
 -------------------------------------------------------------------------------
 module Analysis.Hoare where

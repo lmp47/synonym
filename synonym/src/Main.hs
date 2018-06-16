@@ -2,22 +2,17 @@
 -------------------------------------------------------------------------------
 -- Module    :  Main
 -- Copyright :  (c) 2015 Marcelo Sousa
+--                  2018 Lauren Pick
 -------------------------------------------------------------------------------
 module Main where
 
 import Analysis.Consolidation
-import Analysis.Product
 import Analysis.Properties
-import Analysis.SelfComposition
 import Analysis.Types
 import Analysis.Util
-import Analysis.Lockstep
 import Analysis.LockstepAS
 import Analysis.SBP
-import Analysis.LockstepAS_LoC
-import Analysis.SBP_LoC
 import Analysis.Symmetry
-import NautyTraces.NautyTraces
 import Data.Maybe
 import Language.Java.Parser hiding (opt)
 import Language.Java.Pretty hiding (opt)
@@ -30,9 +25,9 @@ import Z3.Monad
 import qualified Debug.Trace as T
 
 _program, _summary :: String
-_summary = unlines ["descartes - v0.2","Cartersian Hoare Logic Verifier.","Copyright 2015 @ Marcelo Sousa"]
-_program = "descartes"
-_help    = "The input parameter is a Java project directory."
+_summary = unlines ["Synonym","Cartersian Hoare Logic Verifiers","Copyright 2015 @ Marcelo Sousa, 2018 @ Lauren Pick"]
+_program = "dss"
+_help    = "The input parameter is a Java file."
 
 data Property = P1 | P2 | P3
   deriving (Show, Data, Typeable, Eq)
@@ -40,7 +35,7 @@ data Property = P1 | P2 | P3
 data Option =
   Verify {input :: FilePath
          ,prop :: Int
-         ,mode :: Int
+         ,mode :: String
          ,logLevel :: Int}
   deriving (Show, Data, Typeable, Eq)
 
@@ -64,7 +59,7 @@ main = do options <- cmdArgsRun progModes
 
 runOption :: Option -> IO ()
 runOption (Verify path p mode logLevel) =
-  descartes_main logLevel mode path (arity p) (toProp p) (showProp p)
+  synonym_main logLevel mode path (arity p) (toProp p) (showProp p)
 
 arity :: Int -> Int
 arity 1 = 2 
@@ -125,8 +120,8 @@ front_end file = do
     Left e -> print $ file ++ ": " ++ show e
     Right cu -> print cu
     
-descartes_main :: Int -> Int -> FilePath -> Int -> Prop -> String -> IO ()
-descartes_main logLevel mode file arity prop propName = do 
+synonym_main :: Int -> String -> FilePath -> Int -> Prop -> String -> IO ()
+synonym_main logLevel mode file arity prop propName = do 
   ast <- parser compilationUnit `fmap` readFile file 
   case ast of 
     Left e -> print $ file ++ ": " ++ show e
@@ -139,21 +134,14 @@ descartes_main logLevel mode file arity prop propName = do
 --        putStrLn $ show classMap
 --        putStrLn $ show comps
         mapM_ (\cs -> mapM_ (\(Comp _ f) -> putStrLn $ prettyPrint f) cs) comparators
-        descartes mode classMap (head comparators) prop propName
-      else descartes mode classMap (head comparators) prop propName
+        synonym mode classMap (head comparators) prop propName
+      else synonym mode classMap (head comparators) prop propName
 
-descartes mode classMap comparator prop propName = do 
+synonym mode classMap comparator prop propName = do 
   (vals, models) <- case mode of 
-    0 -> evalZ3 $ verify True classMap comparator prop
-    1 -> evalZ3 $ verify False classMap comparator prop
-    2 -> evalZ3 $ verifyWithSelf classMap comparator prop
-    3 -> evalZ3 $ verifyWithProduct classMap comparator prop
-    4 -> evalZ3 $ verifyLs True classMap comparator prop
-    5 -> evalZ3 $ verifyLs False classMap comparator prop
-    6 -> evalZ3 $ verifyLsAs True classMap comparator prop
-    7 -> evalZ3 $ verifySBP True classMap comparator prop
-    8 -> evalZ3 $ verifyLsAs_LoC True classMap comparator prop
-    9 -> evalZ3 $ verifySBP_LoC True classMap comparator prop
+    "descartes" -> evalZ3 $ verify True classMap comparator prop
+    "syn" -> evalZ3 $ verifyLsAs True classMap comparator prop
+    "synonym" -> evalZ3 $ verifySBP True classMap comparator prop
   case vals of
     Unsat -> putStrLn $ "Unsat: OBEYS " ++ propName
     Sat -> do

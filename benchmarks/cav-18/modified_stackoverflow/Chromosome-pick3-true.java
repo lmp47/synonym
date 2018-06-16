@@ -14,7 +14,7 @@ public class Chromosome implements Comparator<Chromosome>{
   int comp2;
   int comp3;
 
-  public int compare(Chromosome o1, Chromosome o2, Chromosome o3) {
+  public int pick(Chromosome o1, Chromosome o2, Chromosome o3) {
       assume (o1.id != o2.id);
       assume (o1.id != o3.id);
       assume (o2.id != o3.id);

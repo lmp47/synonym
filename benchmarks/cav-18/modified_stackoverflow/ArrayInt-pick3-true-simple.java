@@ -12,7 +12,7 @@ public class AInt implements Comparator<AInt>{
    int min13;
    int min23;
    
-   public int compare(AInt o1, AInt o2, AInt o3){
+   public int pick(AInt o1, AInt o2, AInt o3){
      assume (o1.id != o2.id);
      assume (o1.id != o3.id);
      assume (o2.id != o3.id);

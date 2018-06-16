@@ -1,8 +1,10 @@
 -------------------------------------------------------------------------------
 -- Module    :  Analysis.Properties
 -- Copyright :  (c) 2015 Marcelo Sousa
+--                  2018 Lauren Pick
 -- Defines the properties of comparators:
 --  https://docs.oracle.com/javase/8/docs/api/java/util/Comparator.html
+-- Also contains other properties (prop7 - prop14)
 -------------------------------------------------------------------------------
 
 module Analysis.Properties where

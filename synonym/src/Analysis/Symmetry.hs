@@ -15,15 +15,12 @@ import Data.Foldable
 import Analysis.Types
 import Analysis.Util
 import Analysis.Engine
-import NautyTraces.NautyTraces
 
 import Z3.Monad hiding (Params)
 
 import qualified Debug.Trace as T
 import qualified Data.Map as M
 import Data.List
---
--- TODO: clean & fix
 
 sepPid :: AST -> IdMap -> PidMap -> Z3 (String, Maybe Int)
 sepPid ast idmap pidmap =
@@ -71,18 +68,6 @@ fromPreGraph pg =
     foldl
       (\(lab,ptn) (_,vals) -> (vals ++ lab, (take (length vals - 1) (repeat 1)) ++ 0:ptn))
       ([], []) (M.toList $ color pg)
-
-getSymmetries :: EnvOp [[(Int, Int)]]
-getSymmetries = do
-  env@Env{..} <- get
-  pre' <- lift $ simplify _pre
-  post' <- lift $ simplify _post
-  let pids = M.keys _ctrlmap
-  pgr <- lift $ makePreGraph pre' post' pids _idmap (_pidmap `M.union` _gpidmap)
-  let g = fromPreGraph pgr
-  symm <- liftIO $ getSymm (nv g) (nde g) (v g) (d g) (e g) (lab g) (ptn g)
-  let symm' = map (filter (\(x, y) -> x /= y) . zip [0..length pids - 1]) (perms symm)
-  return (filter (/= []) symm')
 
 getSBP :: Map Int AST -> EnvOp AST
 getSBP m = do
@@ -465,13 +450,3 @@ makePreGraph pre post pids idmap pidmap = do
       _                 -> do
         astStr <- astToString ast
         error ("unexpected AST: " ++ astStr)
-
--- Make sparse nauty/traces-compatible graph:
--- Need:
---  - nv : num vertices
---  - nde : number of directed edges
---  - v : index into e s.t. e[v[i]] ... e[v[i] + d[i] - 1]
---        are vertices that vertex i is joined to
---  - d : d[i] gives out-degree of vertex i
---  - e : nde long
---  - lab + ptn for colors

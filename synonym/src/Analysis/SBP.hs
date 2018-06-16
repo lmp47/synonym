@@ -1,9 +1,9 @@
 {-# LANGUAGE RecordWildCards #-}
 -------------------------------------------------------------------------------
--- Module    :  Analysis.Consolidation
--- Copyright :  (c) 2015 Marcelo Sousa
+-- Module    :  Analysis.SBP
+-- Copyright :  (c) 2018 Lauren Pick
 -------------------------------------------------------------------------------
-module Analysis.Lockstep where
+module Analysis.SBP where
 
 import Analysis.Axioms
 import Analysis.Engine
@@ -40,8 +40,8 @@ data Composition = Composition { rest  :: [(Int, Block)]
 
 --
 
-verifyLs :: Bool -> ClassMap -> [Comparator] -> Prop -> Z3 (Result,Maybe String)
-verifyLs opt classMap _comps prop = do
+verifySBP :: Bool -> ClassMap -> [Comparator] -> Prop -> Z3 (Result,Maybe String)
+verifySBP opt classMap _comps prop = do
  let comps = map rewrite _comps
      -- a = unsafePerformIO $ mapM_ (\(Comp _ f) -> putStrLn $ prettyPrint f) comps
  (objSort, pars, res, fields, gpidmap, idmap) <- prelude classMap comps
@@ -52,8 +52,8 @@ verifyLs opt classMap _comps prop = do
  let iCtrlMap = foldl (\m k -> M.insert k [] m) M.empty [0..length(comps) - 1]
 -- let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post opt False False 0
  -- set debug and fuse
- let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post opt True True 0 M.empty idmap gpidmap iCtrlMap []
- ((res, mmodel),_) <- runStateT (analyser (Composition blocks [] [])) iEnv
+ let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post opt False True 0 M.empty idmap gpidmap iCtrlMap []
+ ((res, mmodel),_) <- runStateT (preAnalyser (Composition blocks [] [])) iEnv
  case res of 
   Unsat -> return (Unsat, Nothing)
   Sat -> do
@@ -70,6 +70,11 @@ _triple pre stm post =
   ,stm
   ,post
   ,"-----------------"]
+
+preAnalyser :: Composition -> EnvOp (Result,Maybe Model)
+preAnalyser stmts = do
+  getInitialPerms
+  analyser stmts
 
 -- @ Analyser main function
 analyser :: Composition -> EnvOp (Result,Maybe Model)
@@ -99,8 +104,8 @@ analyse stmts = do
  env@Env{..} <- get
  case (rest stmts, loops stmts, conds stmts) of
   ([], [], []) -> lift $ local $ helper _axioms _pre _post
-  ([], [], cs) -> analyse_conditionals cs
-  ([], ls, cs)  -> analyse_loops ls cs []
+  ([], ls, []) -> analyse_loops ls [] []
+  ([], ls, cs) -> analyse_conditionals ls cs
   ((pid,Block []):rest, ls, cs) -> analyser (Composition rest ls cs)
   ((pid,Block (bstmt:r1)):rest, ls, cs) -> newStmt pid >> case bstmt of
    BlockStmt stmt -> analyser_stmt stmt (pid, Block r1) rest ls cs
@@ -121,13 +126,21 @@ analyse stmts = do
                 (ast, _, _) -> addToPidMap ast pid >> addToIdMap ast ident) vars
     analyser (Composition ((pid, Block r1):rest) ls cs)
 
-analyse_conditionals :: [(Int,Block)] -> EnvOp (Result,Maybe Model)
-analyse_conditionals conds = do
+analyse_conditionals :: [(Int,Block)] -> [(Int,Block)] -> EnvOp (Result,Maybe Model)
+analyse_conditionals loops conds = do
   env@Env{..} <- get
   tuples <- mapM convert conds
   let choices = map (\(x, _, _) -> x) tuples
+  -- check that ctrl flow matches, and if it does, try to find symmetries
+  let ctrl = map (\pid -> safeLookup "check ctrl" pid _ctrlmap) [0..(length conds) - 1]
+  preSBP <- if and $ map (== head ctrl) (tail ctrl)
+            then do
+                 let pidCondMap = foldl (\m (x, (pid, _), _) -> M.insert pid x m) M.empty tuples
+                 sbp <- getSBP pidCondMap
+                 lift $ mkAnd [_pre, sbp]
+            else return _pre
   choice <- lift $ mkOr choices
-  decisions <- lift $ allSAT _pre choices
+  decisions <- lift $ allSAT preSBP choices
   let decisions' = map (\(ast, bools) -> (ast, zipWith (\b (_, th, el) -> if b then th else el) bools tuples)) decisions
   combine env decisions tuples
  where
@@ -141,7 +154,7 @@ analyse_conditionals conds = do
                     then chooseThen thpid (length th) >> return (thpid, Block th)
                     else chooseElse elpid (length el) >> return (elpid, Block el))
                   bools tuples
-    analyser (Composition branches [] [])
+    analyser (Composition branches loops [])
    combine e [] _ = return _default
    combine e (d:ds) tuples = do
      put e
@@ -220,21 +233,22 @@ analyse_loop :: Int -> [BlockStmt] -> [(Int,Block)] -> Exp -> Stmt -> [(Int,Bloc
 analyse_loop pid r1 ls _cond _body cs rest = do
  let bstmt = BlockStmt $ While _cond _body
  env@Env{..} <- get
- invs <- guessInvariants (pid+1) _cond _body
- if _fuse && length ls > 0
+ if _fuse
  --then if all isLoop rest - always the case
  then do 
-   (checkFusion,cont) <- applyFusion ((pid,Block (bstmt:r1)):ls)
+   let (loops,rest) = unzip $ map takeHead ((pid,Block (bstmt:r1)):ls)
+   (checkFusion,cont) <- applyFusion loops rest
    if checkFusion
-   then analyser (Composition (cont++rest) [] cs)
-   else do
-        put env
-        analyse_loop_w_inv invs       
+   then analyser (Composition cont [] cs)
+   else error "Fusion failed"
 --      else analyse (Composition (rest ++ [(pid,Block (bstmt:r1))]) [] cs) -- apply commutativity
- else if invs == []
-   then error "no invs"
-   else analyse_loop_w_inv invs
+ else do
+   invs <- guessInvariants (pid+1) _cond _body
+   analyse_loop_w_inv invs
  where
+   takeHead :: (Int, Block) -> ((Int, Stmt), (Int,Block))
+   takeHead (pid, Block []) = error "takeHead"
+   takeHead (pid, Block ((BlockStmt b):rest)) = ((pid,b), (pid, Block rest))
    isLoop :: (Int, Block) -> Bool
    isLoop (_, Block ((BlockStmt (While _ _)):ls)) = True
    isLoop _ = False
@@ -273,15 +287,34 @@ _analyse_loop pid _cond _body inv = do
       Unsat -> return True
       Sat -> do
        put env
-       return False -- {inv && cond} body {inv} failed
+       return  False -- {inv && cond} body {inv} failed
     Sat -> return False -- inv && not_cond =/=> inv
   Sat -> return False -- pre =/=> inv
 
-applyFusion :: [(Int, Block)] -> EnvOp (Bool,[(Int,Block)])
-applyFusion list = do
+applyFusion :: [(Int, Stmt)] -> [(Int, Block)] -> EnvOp (Bool,[(Int,Block)])
+applyFusion [(pid, (While cond body))] rest = do
+  env@Env{..} <- get
+  invs <- guessInvariants (pid+1) cond body
+  res <- analyse_loop_w_inv pid cond body invs
+  return (res, rest)
+ where
+   analyse_loop_w_inv _ _ _ [] = error "none of the invariants was able to prove the property."
+   analyse_loop_w_inv pid _cond _body (inv:is) = do
+    env@Env{..} <- get
+    it_res <- _analyse_loop pid _cond _body inv
+    if it_res
+    then do
+     cond <- lift $ processExp (_objSort,_params,_res,_fields,_ssamap) _cond
+     ncond <- lift $ mkNot cond
+     pre <- lift $ mkAnd [inv,ncond]
+     put env
+     updatePre inv
+     return True
+    else analyse_loop_w_inv pid _cond _body is
+
+applyFusion loops rest = do
  env@Env{..} <- get
- let (loops,rest) = unzip $ map takeHead list
-     (_conds,bodies) = unzip $ map splitLoop loops
+ let (_conds,bodies) = unzip $ map splitLoop loops
      (pids,conds) = unzip _conds
  -- first, get cond counters
  counter <- case getCondCounter (head conds) of
@@ -315,20 +348,30 @@ applyFusion list = do
      condsNAst <- lift $ mkAnd condsAsts >>= mkNot
      nPre <- lift $ mkAnd [inv,condsNAst]
      ncondAst <- lift $ mkAnd ncondsAsts
-     (lastCheck,_) <- lift $ local $ helper _axioms nPre ncondAst
-     case lastCheck of
-      Unsat -> do
+     (lastCheck, model) <- lift $ local $ helper _axioms nPre ncondAst
+     case (lastCheck, model) of
+      (Unsat, _) -> do
        put env
        updatePre nPre
        return (True,rest)
-      Sat -> return (False,[]) -- "lastCheck failed"
+      (Sat, Just model) -> do --return (False,[]) -- "lastCheck failed"
+        bools <- lift $  getAssignsInModel condsAsts model
+        let (next', done') = L.partition (\(x,_) -> x) (zip bools loops)
+            (next, done) = (map snd next', map snd done')
+        put env
+        -- analyse the "done" loops
+        case done of
+          [] -> error "applyFusion: at least one loop must have finished"
+          ds -> do
+                 (res, _) <- applyFusion ds []
+                 if res
+                 then -- try to analyse the "next" loops
+                   applyFusion next rest >>= return
+                 else error "applyFusion: fuse"
     Sat -> return (False,[]) -- "couldnt prove the loop bodies with invariant"
   Sat -> return (False,[]) -- "precondition does not imply the invariant"
  where
    -- Begin Fusion Utility Functions
-   takeHead :: (Int, Block) -> ((Int, Stmt), (Int,Block))
-   takeHead (pid, Block []) = error "takeHead"
-   takeHead (pid, Block ((BlockStmt b):rest)) = ((pid,b), (pid, Block rest))
    splitLoop :: (Int, Stmt) -> ((Int, Exp), (Int, Block))
    splitLoop (pid, While cond body) =
     case body of
@@ -342,3 +385,16 @@ applyFusion list = do
     iApp <- toApp iAST
     return (iAST,iApp)
    -- End Fusion Utility Functions
+   analyse_loop_w_inv _ _ _ [] = error "none of the invariants was able to prove the property."
+   analyse_loop_w_inv pid _cond _body (inv:is) = do
+    env@Env{..} <- get
+    it_res <- _analyse_loop pid _cond _body inv
+    if it_res
+    then do
+     cond <- lift $ processExp (_objSort,_params,_res,_fields,_ssamap) _cond
+     ncond <- lift $ mkNot cond
+     pre <- lift $ mkAnd [inv,ncond]
+     put env
+     updatePre inv
+     return True
+    else analyse_loop_w_inv pid _cond _body is

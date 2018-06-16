@@ -86,6 +86,7 @@ toComparator :: Ident -> Maybe CompInter
 toComparator (Ident "compare")   = Just Comparator
 toComparator (Ident "compareTo") = Just Comparable
 toComparator (Ident "equals") = Just Comparator
+toComparator (Ident "pick") = Just Comparator
 toComparator _ = Nothing
  
 -- The hasComp parameter specifies whether this class implements the 

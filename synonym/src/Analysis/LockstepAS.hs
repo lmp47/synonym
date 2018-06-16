@@ -1,7 +1,7 @@
 {-# LANGUAGE RecordWildCards #-}
 -------------------------------------------------------------------------------
--- Module    :  Analysis.Consolidation
--- Copyright :  (c) 2015 Marcelo Sousa
+-- Module    :  Analysis.LockstepAS
+-- Copyright :  (c) 2018 Lauren Pick
 -------------------------------------------------------------------------------
 module Analysis.LockstepAS where
 
@@ -52,7 +52,7 @@ verifyLsAs opt classMap _comps prop = do
  let iCtrlMap = foldl (\m k -> M.insert k [] m) M.empty [0..length(comps) - 1]
 -- let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post opt False False 0
  -- set debug and fuse
- let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post opt True True 0 M.empty idmap gpidmap iCtrlMap []
+ let iEnv = Env objSort pars res fields' iSSAMap M.empty axioms pre post post opt False True 0 M.empty idmap gpidmap iCtrlMap []
  ((res, mmodel),_) <- runStateT (analyser (Composition blocks [] [])) iEnv
  case res of 
   Unsat -> return (Unsat, Nothing)
@@ -99,8 +99,8 @@ analyse stmts = do
  env@Env{..} <- get
  case (rest stmts, loops stmts, conds stmts) of
   ([], [], []) -> lift $ local $ helper _axioms _pre _post
-  ([], [], cs) -> analyse_conditionals cs
-  ([], ls, cs)  -> analyse_loops ls cs []
+  ([], ls, []) -> analyse_loops ls [] []
+  ([], ls, cs) -> analyse_conditionals ls cs
   ((pid,Block []):rest, ls, cs) -> analyser (Composition rest ls cs)
   ((pid,Block (bstmt:r1)):rest, ls, cs) -> newStmt pid >> case bstmt of
    BlockStmt stmt -> analyser_stmt stmt (pid, Block r1) rest ls cs
@@ -121,8 +121,8 @@ analyse stmts = do
                 (ast, _, _) -> addToPidMap ast pid >> addToIdMap ast ident) vars
     analyser (Composition ((pid, Block r1):rest) ls cs)
 
-analyse_conditionals :: [(Int,Block)] -> EnvOp (Result,Maybe Model)
-analyse_conditionals conds = do
+analyse_conditionals :: [(Int,Block)] -> [(Int,Block)] -> EnvOp (Result,Maybe Model)
+analyse_conditionals loops conds = do
   env@Env{..} <- get
   tuples <- mapM convert conds
   let choices = map (\(x, _, _) -> x) tuples
@@ -141,7 +141,7 @@ analyse_conditionals conds = do
                     then chooseThen thpid (length th) >> return (thpid, Block th)
                     else chooseElse elpid (length el) >> return (elpid, Block el))
                   bools tuples
-    analyser (Composition branches [] [])
+    analyser (Composition branches loops [])
    combine e [] _ = return _default
    combine e (d:ds) tuples = do
      put e

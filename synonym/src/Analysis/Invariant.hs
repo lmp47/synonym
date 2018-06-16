@@ -2,6 +2,7 @@
 -------------------------------------------------------------------------------
 -- Module    :  Analysis.Invariant
 -- Copyright :  (c) 2015 Marcelo Sousa
+--                  2018 Lauren Pick
 -------------------------------------------------------------------------------
 module Analysis.Invariant where
 

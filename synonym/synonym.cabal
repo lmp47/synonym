@@ -1,12 +1,12 @@
-Name:               descartes
+Name:               synonym
 Version:            0.1
 Cabal-Version:      >= 1.2
-Author:             Marcelo Sousa
+Author:             Lauren Pick, Marcelo Sousa
 Synopsis:           Cartesian Hoare Logic Verifier 
 Description:        Cartesian Hoare Logic Verifier
 Build-Type:         Simple
 
-Executable descartes
+Executable synonym
     Main-Is:          Main.hs
     Build-Depends:    base          
                     , containers    
@@ -16,9 +16,6 @@ Executable descartes
                     , cmdargs
                     , language-java
                     , z3
-    extra-libraries:  nauty
-    extra-lib-dirs:   ../dependencies/nauty26r10
-    C-sources:        ../dependencies/nauty26r10/NT.c
     Hs-Source-Dirs:   src/
     ghc-options:      -O3 -rtsopts -prof -fprof-auto
     Extensions:       DoAndIfThenElse
