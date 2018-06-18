@@ -12,7 +12,7 @@ public class PokerHand implements Comparator<PokerHand> {
   int min23;
 
 
-  public int compare(PokerHand o1, PokerHand o2, PokerHand o3) {
+  public int pick(PokerHand o1, PokerHand o2, PokerHand o3) {
         assume (o1.id != o2.id);
         assume (o1.id != o3.id);
         assume (o2.id != o3.id);
