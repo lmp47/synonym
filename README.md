@@ -13,14 +13,12 @@ Installation
 Synonym is implemented as a modification of Descartes, and
 installation proceeds similarly:
 
-First make sure you have Haskell and z3 installed.
-The version of z3 that is installed should have support for
-interpolants.
+First make sure you have Haskell and z3 installed (recommended: Z3 version 4.5.1).
 
 Then install the language-java and z3 packages by running
 
 * `cabal install` in *dependencies/language-java-0.2.7* and
-* `cabal install z3`
+* `cabal install z3-4.1.2`
 
 To install the main package, run `cabal install` in the 
 *synonym* directory.
